@@ -15,7 +15,6 @@ const BIT_N: u8 = 31;
 const NOP: u32 = 0b1110_0010_1000_0000_0000_0000_0000_0000;
 
 pub struct Cpu {
-    ram: Mem,
     regs: [u32; 37],
     decode_stage: u32,
     execute_stage: u32,
@@ -40,9 +39,8 @@ enum State {
 }
  
 impl Cpu {
-    pub fn new(ram: Mem) -> Self {
+    pub fn new() -> Self {
         Cpu {
-            ram,
             regs: [0; 37],
             decode_stage: NOP,
             execute_stage: NOP,
@@ -57,13 +55,13 @@ impl Cpu {
         self.regs[15] = 0;
     }
 
-    pub fn step(&mut self) {
+    pub fn step(&mut self, ram: &mut Mem) {
         let state = self.get_state();
         let mode = self.get_mode();
 
         let instruction = self.execute_stage;
         self.execute_stage = self.decode_stage;
-        self.decode_stage = self.ram.get_word(self.regs[15] as usize).little_endian();
+        self.decode_stage = ram.get_word(self.regs[15] as usize).little_endian();
 
         self.regs[15] += match state { State::Arm => 4, State::Thumb => 2 };
 
