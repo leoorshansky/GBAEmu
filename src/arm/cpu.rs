@@ -1,25 +1,25 @@
-use std::{io::Read, thread::current};
-use anyhow::Result;
+use std::rc::Rc;
 
 use crate::mem::Mem;
 
-static REG_CPSR: usize = 31;
-static REG_SPSR_FIQ: usize = 32;
-static REG_SPSR_SVC: usize = 33;
-static REG_SPSR_ABT: usize = 34;
-static REG_SPSR_IRQ: usize = 35;
-static REG_SPSR_UND: usize = 36;
-static BIT_V: u8 = 28;
-static BIT_C: u8 = 29;
-static BIT_Z: u8 = 30;
-static BIT_N: u8 = 31;
-static NOP: usize = 0b1110_0010_1000_0000_0000_0000_0000_0000;
+const REG_CPSR: usize = 31;
+const REG_SPSR_FIQ: usize = 32;
+const REG_SPSR_SVC: usize = 33;
+const REG_SPSR_ABT: usize = 34;
+const REG_SPSR_IRQ: usize = 35;
+const REG_SPSR_UND: usize = 36;
+const BIT_V: u8 = 28;
+const BIT_C: u8 = 29;
+const BIT_Z: u8 = 30;
+const BIT_N: u8 = 31;
+const NOP: u32 = 0b1110_0010_1000_0000_0000_0000_0000_0000;
 
 pub struct Cpu {
     ram: Mem,
     regs: [u32; 37],
     decode_stage: u32,
-    execute_stage: u32
+    execute_stage: u32,
+    debug: bool
 }
 
 #[derive(Copy, Clone)]
@@ -40,6 +40,23 @@ enum State {
 }
  
 impl Cpu {
+    pub fn new(ram: Mem) -> Self {
+        Cpu {
+            ram,
+            regs: [0; 37],
+            decode_stage: NOP,
+            execute_stage: NOP,
+            debug: false
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.regs[REG_SPSR_SVC] = self.regs[REG_CPSR];
+        self.regs[24] = self.regs[15];
+        self.regs[REG_CPSR] = 0b11010011;
+        self.regs[15] = 0;
+    }
+
     pub fn step(&mut self) {
         let state = self.get_state();
         let mode = self.get_mode();
@@ -48,21 +65,34 @@ impl Cpu {
         self.execute_stage = self.decode_stage;
         self.decode_stage = self.ram.get_word(self.regs[15] as usize).little_endian();
 
+        self.regs[15] += match state { State::Arm => 4, State::Thumb => 2 };
+
+        if instruction == NOP {
+            if self.debug {
+                println!("Executed NOP");
+            }
+            return;
+        }
+
+        if instruction == 0 {    // REMOVE THIS AFTER DEBUGGING -------------------------------------------------------------------------------------------------
+            return;
+        }
+
         if let State::Arm = state {
             let sets_flags = 1 == instruction >> 20 & 1;
             let immediate = 1 == instruction >> 25 & 1;
             let opcode = instruction >> 21 & 0b111_1111; // Bits 21 through 27
 
-            let rn = self.get_register(mode, instruction >> 16 & 0b1111);
+            let rn = self.regs[self.get_register_index(mode, instruction >> 16 & 0b1111)];
             let rd_index = self.get_register_index(mode, instruction >> 12 & 0b1111);
-            let rs = self.get_register(mode, instruction >> 8 & 0b1111);
-            let rm = self.regs[(instruction & 0b1111) as usize];
+            let rs = self.regs[self.get_register_index(mode, instruction >> 8 & 0b1111)];
+            let rm = self.regs[self.get_register_index(mode, instruction & 0b1111)];
 
             let mut shifter_carry = self.get_status_bit(BIT_C);
 
             let operand2 = if immediate {
                 let rotate_amount = (instruction >> 8 & 0b1111) * 2;
-                (instruction & 0xff) >> rotate_amount | (instruction & 0xff) << (32 - rotate_amount)
+                (instruction & 0xff).rotate_right(rotate_amount)
             } else {
                 let rm = if instruction & 0b1111 == 0b1111 { rm + 4 } else { rm }; // PC is +4 if there is a register-specified shift
                 let shift_amount = if 1 == (instruction >> 4) & 1 { rs & 0xff } else { instruction >> 7 & 0b11111 };
@@ -112,13 +142,13 @@ impl Cpu {
                         0b11 => { // Rotate Right
                             if shift_amount == 0 {
                                 shifter_carry = 1 == rm & 1;
-                                if self.get_status_bit(BIT_C) { rm >> 1 | 1 << 31} else { rm >> 1}
+                                if self.get_status_bit(BIT_C) { rm >> 1 | 1 << 31 } else { rm >> 1}
                             } else if shift_amount == 32 {
                                 shifter_carry = 1 == rm >> 31;
                                 rm
                             } else {
                                 shifter_carry = 1 == rm >> (shift_amount % 32 - 1) & 1;
-                                rm >> (shift_amount % 32) | rm << (32 - shift_amount % 32)
+                                rm.rotate_right(shift_amount % 32)
                             }
                         }
                         _ => panic!()
@@ -130,78 +160,95 @@ impl Cpu {
             let mut c = shifter_carry; // Carry flag
 
             if self.should_execute_arm(instruction) {
+                let mut debug_string = "Unrecognized opcode";
                 if opcode >> 5 == 0 { // Data Processing
                     let mut write_back = true;
                     let result = match opcode & 0b1111 {
                         0b0000 => { // AND
+                            debug_string = "AND";
                             rn & operand2
                         }
                         0b0001 => { // EOR
+                            debug_string = "EOR";
                             rn ^ operand2
                         }
                         0b0010 => { // SUB
+                            debug_string = "SUB";
                             signed_result = rn as i64 - operand2 as i64;
                             c = signed_result >= 0;
-                            rn - operand2
+                            rn.wrapping_sub(operand2)
                         }
                         0b0011 => { // RSB
+                            debug_string = "RSB";
                             signed_result = operand2 as i64 - rn as i64;
                             c = signed_result >= 0;
-                            operand2 - rn
+                            operand2.wrapping_sub(rn)
                         }
                         0b0100 => { // ADD
+                            debug_string = "ADD";
                             signed_result = operand2 as i64 + rn as i64;
                             c = signed_result >= 1 << 32;
-                            operand2 + rn
+                            operand2.wrapping_add(rn)
                         }
                         0b0101 => { // ADC
+                            debug_string = "ADC";
                             let carry_in = self.get_status_bit(BIT_C);
                             signed_result = operand2 as i64 + rn as i64 + carry_in as i64;
                             c = signed_result >= 1 << 32;
-                            operand2 + rn + carry_in as u32
+                            operand2.wrapping_add(rn).wrapping_add(carry_in as u32)
                         }
                         0b0110 => { // SBC
+                            debug_string = "SBC";
                             let carry_in = self.get_status_bit(BIT_C);
                             signed_result = rn as i64 - operand2 as i64 + carry_in as i64 - 1;
                             c = signed_result >= 0;
-                            rn - operand2 + carry_in as u32 - 1
+                            rn.wrapping_sub(operand2).wrapping_add(carry_in as u32).wrapping_sub(1)
                         }
                         0b0111 => { // RSC
+                            debug_string = "RSC";
                             let carry_in = self.get_status_bit(BIT_C);
                             signed_result = operand2 as i64 - rn as i64 + carry_in as i64 - 1;
                             c = signed_result >= 0;
-                            operand2 - rn + carry_in as u32 - 1
+                            operand2.wrapping_sub(rn).wrapping_add(carry_in as u32).wrapping_sub(1)
                         }
                         0b1000 => { // TST
+                            debug_string = "TST";
                             write_back = false;
                             rn & operand2
                         }
                         0b1001 => { // TEQ
+                            debug_string = "TEQ";
                             write_back = false;
                             rn ^ operand2
                         }
                         0b1010 => { // CMP
+                            debug_string = "CMP";
                             write_back = false;
                             signed_result = rn as i64 - operand2 as i64;
                             c = signed_result >= 0;
-                            rn - operand2
+                            rn.wrapping_sub(operand2)
                         }
                         0b1011 => { // CMN
+                            debug_string = "CMN";
                             write_back = false;
                             signed_result = operand2 as i64 + rn as i64;
                             c = signed_result >= 1 << 32;
-                            operand2 + rn
+                            rn.wrapping_add(operand2)
                         }
                         0b1100 => { // ORR
+                            debug_string = "ORR";
                             rn | operand2
                         }
                         0b1101 => { // MOV
+                            debug_string = "MOV";
                             operand2
                         }
                         0b1110 => { // BIC
+                            debug_string = "BIC";
                             rn & !operand2
                         }
                         0b1111 => { // MVN
+                            debug_string = "MVN";
                             !operand2
                         }
                         _ => panic!()
@@ -221,14 +268,15 @@ impl Cpu {
                         self.regs[rd_index] = result;
                     }
                 }
+                if self.debug { println!("Executed {} with op1 = {}, op2 = {}, dest = {}", 
+                                        debug_string, rn as i32, operand2 as i32, rd_index as i32); }
                 let x = 6;
             }
         }
     }
 
-    #[inline(always)]
-    fn get_register(&self, mode: Mode, index: u32) -> u32 {
-        self.regs[self.get_register_index(mode, index)]
+    pub fn toggle_debug(&mut self) {
+        self.debug = !self.debug
     }
 
     #[inline(always)]

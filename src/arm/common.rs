@@ -4,11 +4,11 @@ pub struct HalfWord {
 
 impl HalfWord {
     pub fn little_endian(&self) -> u16 {
-        (self.bytes[1] as u16) << 8 | (self.bytes[0] as u16)
+        u16::from_le_bytes(self.bytes)
     }
 
     pub fn big_endian(&self) -> u16 {
-        (self.bytes[0] as u16) << 8 | (self.bytes[1] as u16)
+        u16::from_be_bytes(self.bytes)
     }
 }
 
@@ -18,10 +18,10 @@ pub struct Word {
 
 impl Word {
     pub fn little_endian(&self) -> u32 {
-        (self.bytes[3] as u32) << 24 | (self.bytes[2] as u32) << 16 | (self.bytes[1] as u32) << 8 | (self.bytes[0] as u32)
+        u32::from_le_bytes(self.bytes)
     }
 
     pub fn big_endian(&self) -> u32 {
-        (self.bytes[0] as u32) << 24 | (self.bytes[1] as u32) << 16 | (self.bytes[2] as u32) << 8 | (self.bytes[3] as u32)
+        u32::from_be_bytes(self.bytes)
     }
 }
