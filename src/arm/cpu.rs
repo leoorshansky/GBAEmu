@@ -475,6 +475,20 @@ impl Cpu {
                     if write_back {
                         self.regs[rn_index] = offset_address;
                     }
+                } else if opcode >> 4 == 4 {
+                    let up = instruction >> 23 & 1 == 1;
+                    let pre_index = instruction >> 24 & 1 == 1;
+                    let load_psr = instruction >> 22 & 1 == 1;
+                    let write_back = instruction >> 21 & 1 == 1;
+
+                    offset = if up { 4 } else { -4 };
+                    let memory_address = if pre_index { rn + offset } else { rn };
+
+                    if instruction >> 20 & 1 == 1 {
+                        
+                    } else {
+
+                    }
                 }
                 
                 if self.debug { println!("Executed {} with op1 = {}, op2 = {}, dest = {}", 
