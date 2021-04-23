@@ -24,6 +24,25 @@ impl Mem {
     }
 
     #[inline(always)]
+    pub fn set_byte(&mut self, byte_index: usize, data: u8) {
+        self.mem[byte_index] = data;
+    }
+
+    #[inline(always)]
+    pub fn set_halfword(&mut self, byte_index: usize, data: HalfWord) {
+        self.mem[byte_index] = data.bytes[0];
+        self.mem[byte_index + 1] = data.bytes[1];
+    }
+
+    #[inline(always)]
+    pub fn set_word(&mut self, byte_index: usize, data: Word) {
+        self.mem[byte_index] = data.bytes[0];
+        self.mem[byte_index + 1] = data.bytes[1];
+        self.mem[byte_index + 2] = data.bytes[2];
+        self.mem[byte_index + 3] = data.bytes[3];
+    }
+
+    #[inline(always)]
     pub fn get_byte(&self, byte_index: usize) -> u8 {
         self.mem[byte_index]
     }
