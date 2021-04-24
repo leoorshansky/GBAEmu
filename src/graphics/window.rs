@@ -1,10 +1,10 @@
 extern crate gtk;
 extern crate gio;
-use gtk::prelude::*;
+use gtk::{Application, ApplicationWindow, Button, prelude::*};
 use gio::prelude::*;
 
 
-fn createDisplay() {
+pub fn createDisplay() {
     let application = Application::new(
         Some("com.github.gtk-rs.examples.basic"),
         Default::default(),
