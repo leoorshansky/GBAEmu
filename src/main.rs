@@ -1,11 +1,13 @@
 pub mod arm;
 pub mod graphics;
+pub mod audio;
 
 use std::fs::File;
 
 use arm::{cpu, mem};
 use anyhow::Result;
 use graphics::window::createDisplay;
+use audio::apu::make_a_sound;
 
 fn main() -> Result<()> {
     let mut ram = mem::Mem::new(300_000_000);
@@ -19,6 +21,7 @@ fn main() -> Result<()> {
         cpu.step(&mut ram);
     }
     */
-    createDisplay();
+    // createDisplay();
+    //make_a_sound();
     Ok(())
 }
