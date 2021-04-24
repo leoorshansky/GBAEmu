@@ -1,9 +1,11 @@
 pub mod arm;
+pub mod graphics;
 
 use std::fs::File;
 
 use arm::{cpu, mem};
 use anyhow::Result;
+use graphics::window::createDisplay;
 
 fn main() -> Result<()> {
     let mut ram = mem::Mem::new(300_000_000);
@@ -17,6 +19,6 @@ fn main() -> Result<()> {
         cpu.step(&mut ram);
     }
     */
-    Ok(())
     createDisplay();
+    Ok(())
 }
