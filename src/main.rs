@@ -22,6 +22,6 @@ fn main() -> Result<()> {
     }
     */
     // createDisplay();
-    //make_a_sound();
+    make_a_sound();
     Ok(())
 }

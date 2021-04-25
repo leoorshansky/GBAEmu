@@ -1,6 +1,6 @@
 use std::time::Duration;
-use cpal::Data;
-use cpal::traits::{HostTrait, DeviceTrait, StreamTrait}; 
+use rodio::{OutputStream, Sink};
+use rodio::source::{SineWave, Source};
 
 const SOUND_OFFSET: u64 = 0x40000000;
 const REG_SND1SWEEP: u64 = SOUND_OFFSET + 0x60;
@@ -20,59 +20,14 @@ const REG_SNDBIAS: u64 = SOUND_OFFSET + 0x88;
 
 
 pub fn make_a_sound() {
-    let host = cpal::default_host();
+    let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+    let sink = Sink::try_new(&stream_handle).unwrap();
 
-    let device = host
-        .default_output_device()
-        .expect("failed to find output device");
+    // Add a dummy source of the sake of the example.
+    let source = SineWave::new(440).take_duration(Duration::from_secs_f32(3.0)).amplify(0.20);
+    sink.append(source);
 
-    let config = device.default_output_config().unwrap();
-
-    match config.sample_format() {
-        cpal::SampleFormat::F32 => run::<f32>(&device, &config.into()).unwrap(),
-        cpal::SampleFormat::I16 => run::<i16>(&device, &config.into()).unwrap(),
-        cpal::SampleFormat::U16 => run::<u16>(&device, &config.into()).unwrap(),
-    }
-}
-
-fn run<T>(device: &cpal::Device, config: &cpal::StreamConfig) -> Result<(), anyhow::Error>
-where
-    T: cpal::Sample,
-{
-    let sample_rate = config.sample_rate.0 as f32;
-    let channels = config.channels as usize;
-
-    // Produce a sinusoid of maximum amplitude.
-    let mut sample_clock = 0f32;
-    let mut next_value = move || {
-        sample_clock = (sample_clock + 1.0) % sample_rate;
-        (sample_clock * 440.0 * 2.0 * std::f32::consts::PI / sample_rate).sin()
-    };
-
-    let err_fn = |err| eprintln!("an error occurred on stream: {}", err);
-
-    let stream = device.build_output_stream(
-        config,
-        move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
-            write_data(data, channels, &mut next_value)
-        },
-        err_fn,
-    )?;
-    stream.play()?;
-
-    std::thread::sleep(std::time::Duration::from_millis(1000));
-
-    Ok(())
-}
-
-fn write_data<T>(output: &mut [T], channels: usize, next_sample: &mut dyn FnMut() -> f32)
-where
-    T: cpal::Sample,
-{
-    for frame in output.chunks_mut(channels) {
-        let value: T = cpal::Sample::from::<f32>(&next_sample());
-        for sample in frame.iter_mut() {
-            *sample = value;
-        }
-    }
+    // The sound plays in a separate thread. This call will block the current thread until the sink
+    // has finished playing all its queued sounds.
+    sink.sleep_until_end();
 }
