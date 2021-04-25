@@ -39,11 +39,26 @@ const VCountTriggerValue_START_BIT: u8 = 8;
 const VCountTriggerValue_END_BIT: u8 = 15;
 //VCounter Register Information
 const REG_VCOUNT_ADDR: usize = 0x00400006;
-
+//BG Control Register Information
+const BG0_CNTRL_ADDR: usize = 0x04000008;
+const BG1_CNTRL_ADDR: usize = 0x0400000A;
+const BG2_CNTRL_ADDR: usize = 0x0400000C;
+const BG0_CNTRL_ADDR: usize = 0x0400000E;
+const BG_PRIORITY_START_BIT: u8 = 0;
+const BG_PRIORITY_END_BIT: u8 = 1;
+const CHARACTER_BASE_START_BIT: u8 = 2;
+const CHARACTER_BASE_END_BIT: u8 = 3;
+const MOSAIC_BIT: u8 = 6;
+const PALETTES_BIT: u8 = 6;
+const SCREEN_BASE_START_BIT: u8 = 8;
+const SCREEN_BASE_END_BIT: u8 = 12;
+const SCREEN_SIZE_START_BIT: u8 = 14;
+const SCREEN_SIZE_END_BIT: u8 = 15;
 //Timing constants
 const CYCLE_TIME: usize = 16666666;
 const V_BLANK_TIME: usize = 11695906;
-
+const SCANLINE_TIME: usize = 73099;
+const H_BLANK_TIME: usize = 56960;
 struct Register{
     value: u16,
     address: usize,
@@ -84,6 +99,7 @@ impl Register{
 
 
 pub fn draw(mem: &mut Mem, elapsed: Duration) -> (){
+    //initializing video registers
     let mut control = Register {
         value: mem.get_halfword(REG_DISPCNT_ADDR).little_endian(),
         address: REG_DISPCNT_ADDR,
@@ -96,12 +112,21 @@ pub fn draw(mem: &mut Mem, elapsed: Duration) -> (){
         value: mem.get_halfword(REG_VCOUNT_ADDR).little_endian(),
         address: REG_VCOUNT_ADDR,
     };
+    //setting up timing
     let mut currentCycle = elapsed.as_nanos() % CYCLE_TIME as u128;
     if(currentCycle > V_BLANK_TIME as u128){
-        status.setBit(1, 0, mem);
+        status.setBit(1, VBlank_BIT, mem);
     }
     else{
-        status.setBit(0, 0, mem);
+        status.setBit(0, VBlank_BIT, mem);
     }
+    let mut currentScanline = elapsed.as_nanos() % SCANLINE_TIME as u128;
+    if(currentCycle > H_BLANK_TIME as u128){
+        status.setBit(1, HBlank_BIT, mem);
+    }
+    else{
+        status.setBit(0, HBlank_BIT, mem);
+    }
+
 
 }
