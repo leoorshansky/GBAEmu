@@ -39,6 +39,17 @@ const VCountTriggerValue_START_BIT: u8 = 8;
 const VCountTriggerValue_END_BIT: u8 = 15;
 //VCounter Register Information
 const REG_VCOUNT_ADDR: usize = 0x00400006;
+//I/O BG Offset Registers
+const BG0_HORIZONTAL_OFFSET: usize = 0x4000010;
+const BG0_VERTICAL_OFFSET: usize = 0x4000012;
+const BG1_HORIZONTAL_OFFSET: usize = 0x4000014;
+const BG1_VERTICAL_OFFSET: usize = 0x4000016;
+const BG2_HORIZONTAL_OFFSET: usize = 0x4000018;
+const BG2_VERTICAL_OFFSET: usize = 0x400001A;
+const BG3_HORIZONTAL_OFFSET: usize = 0x400001C;
+const BG3_VERTICAL_OFFSET: usize = 0x400001E;
+
+
 
 //Timing constants
 const CYCLE_TIME: usize = 16666666;
