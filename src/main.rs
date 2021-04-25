@@ -3,7 +3,8 @@ pub mod graphics;
 pub mod audio;
 
 use std::fs::File;
-
+use std::time::{Duration, Instant};
+use graphics::gpu::{draw};
 use arm::{cpu, mem};
 use anyhow::Result;
 use graphics::window::createDisplay;
@@ -16,11 +17,15 @@ fn main() -> Result<()> {
     let mut cpu = cpu::Cpu::new();
     cpu.reset();
     cpu.toggle_debug();
-    /*
+    let mut elapsed = Duration::from_millis(0);
+    let gpuCycleStart = Instant::now();
     for _ in 0..200 {
         cpu.step(&mut ram);
+        elapsed += Instant::now().duration_since(gpuCycleStart);
+        draw(&mut ram, elapsed);
+
     }
-    */
+    
     // createDisplay();
     make_a_sound();
     Ok(())
