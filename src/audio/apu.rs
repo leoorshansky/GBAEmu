@@ -1,6 +1,8 @@
+use rodio::source::Amplify;
 use std::time::Duration;
 use rodio::{OutputStream, Sink};
 use rodio::source::{SineWave, Source};
+use std::f32::consts::PI;
 
 const SOUND_OFFSET: u64 = 0x40000000;
 const REG_SND1SWEEP: u64 = SOUND_OFFSET + 0x60;
@@ -30,4 +32,20 @@ pub fn make_a_sound() {
     // The sound plays in a separate thread. This call will block the current thread until the sink
     // has finished playing all its queued sounds.
     sink.sleep_until_end();
+}
+
+fn freq_from_rate(rate: u16) -> u32 {
+    (1 << 17) / (2048 - rate) as u32
+}
+
+fn gen_sine_waves(amplitude: f32, duty_cycle: f32, frequency: u32, terms: u16) -> Vec<Amplify<SineWave>> {
+    let mut waves = Vec::new();
+
+    for n in 0..terms {
+        let freq: u32 = (2.0 * PI * frequency as f32 * n as f32) as u32;
+        let amp: f32 = (2.0 * amplitude / (PI * n as f32)) * (PI * n as f32 * duty_cycle).sin();
+        waves.push(SineWave::new(freq).amplify(amp));
+    }
+
+    waves
 }
