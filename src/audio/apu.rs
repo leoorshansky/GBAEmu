@@ -1,3 +1,4 @@
+use crate::audio::pulse_wave::PulseWave;
 use rodio::source::Amplify;
 use std::time::Duration;
 use rodio::{OutputStream, Sink};
@@ -59,6 +60,8 @@ impl APU {
         }
     }
 
+    // todo: sweep stuff, envelope stuff, channel 3 sample reading, channel 4 noise generation
+    // todo: direct sound stuff
     fn play_pulse_wave(&self, duration: Duration, amplitude: f32, duty_cycle: f32, frequency: u32) {
         let terms = 5; // constant number of terms of fourier transform
         let mut waves = Self::gen_sine_waves(amplitude, duty_cycle, frequency, terms);
@@ -68,6 +71,12 @@ impl APU {
         }
 
         self.channel2_sinks[0].sleep_until_end();
+    }
+
+    fn play_pulse_wave2(&self, duration: Duration, amplitude: f32, duty_cycle: f32, frequency: u32) {
+        self.channel1_sinks[0].append(PulseWave::new(amplitude, duty_cycle, frequency as f32).take_duration(duration));
+
+        self.channel1_sinks[0].sleep_until_end();
     }
 
     fn gen_sine_waves(amplitude: f32, duty_cycle: f32, frequency: u32, terms: u16) -> Vec<Amplify<SineWave>> {
@@ -89,6 +98,6 @@ impl APU {
 
 pub fn make_a_sound() {
     let apu = APU::new();
-    apu.play_pulse_wave(Duration::from_secs_f32(1.2), 1.0, 0.5, 659);
+    apu.play_pulse_wave2(Duration::from_secs_f32(1.2), 1.0, 0.5, 659);
 }
 
