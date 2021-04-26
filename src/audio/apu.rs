@@ -22,82 +22,32 @@ const REG_SNDSTAT: u64 = SOUND_OFFSET + 0x84;
 const REG_SNDBIAS: u64 = SOUND_OFFSET + 0x88;
 
 
-struct APU {
-    channel1_sinks: Vec<Sink>,
-    channel2_sinks: Vec<Sink>,
-    channel3_sinks: Vec<Sink>,
-    channel4_sinks: Vec<Sink>,
-    ds1_sinks: Vec<Sink>,
-    ds2_sinks: Vec<Sink>,
+// todo: sweep stuff, envelope stuff, channel 3 sample reading, channel 4 noise generation
+// todo: direct sound stuff
+fn play_pulse_wave(duration: Duration, amplitude: f32, duty_cycle: f32, frequency: u32) {
+    let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+    let sink = Sink::try_new(&stream_handle).unwrap();
+
+    sink.append(PulseWave::new(frequency as f32, duty_cycle).amplify(amplitude).take_duration(duration));
+
+    // sink.detach();
+    sink.sleep_until_end();
 }
 
-impl APU {
-    fn new() -> APU {
-        let (_stream, stream_handle) = OutputStream::try_default().unwrap();
-        let mut channel1_sinks = Vec::new();
-        let mut channel2_sinks = Vec::new();
-        let mut channel3_sinks = Vec::new();
-        let mut channel4_sinks = Vec::new();
-        let mut ds1_sinks = Vec::new();
-        let mut ds2_sinks = Vec::new();
-
-        for _i in 0..5 {
-            channel1_sinks.push(Sink::try_new(&stream_handle).unwrap());
-            channel2_sinks.push(Sink::try_new(&stream_handle).unwrap());
-            channel3_sinks.push(Sink::try_new(&stream_handle).unwrap());
-            channel4_sinks.push(Sink::try_new(&stream_handle).unwrap());
-            ds1_sinks.push(Sink::try_new(&stream_handle).unwrap());
-            ds2_sinks.push(Sink::try_new(&stream_handle).unwrap());
-        }
-
-        APU {
-            channel1_sinks,
-            channel2_sinks,
-            channel3_sinks,
-            channel4_sinks,
-            ds1_sinks,
-            ds2_sinks,
-        }
-    }
-
-    // todo: sweep stuff, envelope stuff, channel 3 sample reading, channel 4 noise generation
-    // todo: direct sound stuff
-    fn play_pulse_wave(&self, duration: Duration, amplitude: f32, duty_cycle: f32, frequency: u32) {
-        let terms = 5; // constant number of terms of fourier transform
-        let mut waves = Self::gen_sine_waves(amplitude, duty_cycle, frequency, terms);
-
-        for i in 0..terms as usize {
-            self.channel2_sinks[i].append(waves.remove(0).take_duration(duration));
-        }
-
-        self.channel2_sinks[0].sleep_until_end();
-    }
-
-    fn play_pulse_wave2(&self, duration: Duration, amplitude: f32, duty_cycle: f32, frequency: u32) {
-        self.channel1_sinks[0].append(PulseWave::new(amplitude, duty_cycle, frequency as f32).take_duration(duration));
-
-        self.channel1_sinks[0].sleep_until_end();
-    }
-
-    fn gen_sine_waves(amplitude: f32, duty_cycle: f32, frequency: u32, terms: u16) -> Vec<Amplify<SineWave>> {
-        let mut waves = Vec::new();
-
-        for n in 1..=terms {
-            let freq: u32 = (frequency as f32 * n as f32) as u32;
-            let amp: f32 = (2.0 * amplitude / (PI * n as f32)) * (PI * n as f32 * duty_cycle).sin();
-            waves.push(SineWave::new(freq).amplify(amp));
-        }
-
-        waves
-    }
-
-    fn freq_from_rate(rate: u16) -> u32 {
-        (1 << 17) / (2048 - rate) as u32
-    }
+fn freq_from_rate(rate: u16) -> u32 {
+    (1 << 17) / (2048 - rate) as u32
 }
 
 pub fn make_a_sound() {
-    let apu = APU::new();
-    apu.play_pulse_wave2(Duration::from_secs_f32(1.2), 1.0, 0.5, 659);
+    // play_pulse_wave(Duration::from_secs_f32(0.5), 1.0, 0.5, 440);
+    // play_pulse_wave(Duration::from_secs_f32(0.5), 0.5, 0.5, 440);
+    // play_pulse_wave(Duration::from_secs_f32(0.5), 0.25, 0.5, 440);
+    play_pulse_wave(Duration::from_secs_f32(0.3), 1.0, 0.5, 330);
+    play_pulse_wave(Duration::from_secs_f32(0.2), 1.0, 0.5, 246);
+    play_pulse_wave(Duration::from_secs_f32(0.2), 1.0, 0.5, 261);
+    play_pulse_wave(Duration::from_secs_f32(0.3), 1.0, 0.5, 294);
+    play_pulse_wave(Duration::from_secs_f32(0.2), 1.0, 0.5, 261);
+    play_pulse_wave(Duration::from_secs_f32(0.2), 1.0, 0.5, 246);
+    play_pulse_wave(Duration::from_secs_f32(0.3), 1.0, 0.5, 220);
 }
 
