@@ -13,7 +13,7 @@ const OAM_START: usize = 0x07000000;
 const OAM_END: usize = 0x070003FF;
 
 //Control Register Information
-const REG_DISPCNT_ADDR: usize = 0x00400000;
+const REG_DISPCNT_ADDR: usize = 0x04000000;
 const VideoMode_START_BIT: u8 = 0;
 const VideoMode_END_BIT: u8 = 2;
 const GameBoy_BIT: u8 = 3;
@@ -30,7 +30,7 @@ const Window0Display_BIT: u8 = 13;
 const Window1Display_BIT: u8 = 14;
 const OBJWindowDisplay_BIT: u8 = 15;
 //Display Status Register Information
-const REG_DISPSTAT_ADDR: usize = 0x00400004;
+const REG_DISPSTAT_ADDR: usize = 0x04000004;
 const VBlank_BIT: u8 = 0;
 const HBlank_BIT: u8 = 1;
 const VCountTrigger_BIT: u8 = 2;
@@ -40,7 +40,7 @@ const VCountInterruptRequest_BIT: u8 = 5;
 const VCountTriggerValue_START_BIT: u8 = 8;
 const VCountTriggerValue_END_BIT: u8 = 15;
 //VCounter Register Information
-const REG_VCOUNT_ADDR: usize = 0x00400006;
+const REG_VCOUNT_ADDR: usize = 0x04000006;
 //BG Control Register Information
 const BG_CNTRL_ADDR: [usize; 4] = [0x04000008, 0x0400000A, 0x0400000C, 0x0400000E];
 const BG_PRIORITY_START_BIT: u8 = 0;
