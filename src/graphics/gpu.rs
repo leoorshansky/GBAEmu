@@ -63,6 +63,15 @@ const SCANLINE_TIME: usize = 73099;
 const H_BLANK_TIME: usize = 56960;
 //Tile Data Information
 const TILE_DATA_ADDR:usize = 0x06000000;
+//Bitmap addresses
+const BITMAP_DATA_ADDR : usize = 0x06000000;
+const MODE3_DATA_ENDADDR : usize = 0x06013FFF;
+const MODE45_DATA_ENDADDR : usize = 0x06009FFF;
+//OBJ Tile Addresses 
+const OBJ_DATA_ADDR : usize = 0x06014000;
+const OBJ_DATA_ENDADDR : usize = 0x06017FFF
+
+
 struct Register{
     value: u16,
     address: usize,
@@ -209,8 +218,7 @@ pub fn addBGLayer(bgNum: usize, screen: &mut RgbImage, mem: &mut Mem){
                     let greenComp: u16 = (currentPixelData / 2^5)  % (2^5); 
                     let redComp: u16 = (currentPixelData)  % (2^5);
                     screen.put_pixel(x as u32, y as u32, Rgb([redComp as u8, greenComp as u8, blueComp as u8]));
-                }
-                    //16 color mode
+                } //16 color mode
                 else{
                         
                 }
