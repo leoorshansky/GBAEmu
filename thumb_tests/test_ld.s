@@ -1,0 +1,94 @@
+MOV SP, #500
+MOV LR, #main + 1
+BX LR
+.THUMB
+main:
+LDR R0, lmao
+LDR R1, lmao
+MOV R0, #250
+MOV R1, #8
+STR R0, [R0, R1]
+LDR R3, [R0, R1]
+MOV R1, #6
+LDR R3, [R0, R1]
+MOV R1, #9
+STRB R0, [R0, R1]
+LDRB R3, [R0, R1]
+MOV R1, #8
+LDR R3, [R0, R1]
+LDR R0, lmao
+MUL R0, R1
+MUL R0, R1
+MUL R0, R1
+MUL R0, R1
+MUL R0, R1
+MOV R2, #250
+MOV R3, #0
+STRH R0, [R2, R3]
+LDRH R4, [R2, R3]
+LDSH R4, [R2, R3]
+MOV R3, #1
+LDSB R4, [R2, R3]
+MOV R0, #250
+STR R0, [R0, #8]
+LDR R3, [R0, #8]
+STRB R0, [R0, #8]
+LDRB R3, [R0, #8]
+LDR R0, lmao
+MOV R1, #8
+MUL R0, R1
+MUL R0, R1
+MUL R0, R1
+MUL R0, R1
+MUL R0, R1
+STRH R0, [R3, #8]
+LDRH R4, [R3, #8]
+STR R0, [SP, #20]
+LDR R3, [SP, #20]
+ADR R0, lmao
+LDR R1, [R0, #0]
+ADD R0, SP, #20
+LDR R1, [R0, #0]
+MOV R0, SP
+ADD SP, #20
+POP {R0}
+MOV R0, R0
+ADD SP, #-24
+MOV R0, #0
+MOV R1, #1
+MOV R2, #2
+MOV R3, #3
+MOV R4, #4
+MOV R5, #5
+PUSH {R0, R1, R2, R3, R4, R5}
+MOV R0, SP
+POP {R0, R1, R2, R3, R4, R5}
+MOV R0, R0
+MOV R0, R1
+MOV R0, R2
+MOV R0, R3
+MOV R0, R4
+MOV R0, R5
+MOV R0, SP
+ADR R7, yo
+MOV LR, R7
+PUSH {R0, LR}
+POP {R0, PC}
+.align 4
+yo:
+MOV R0, SP
+MOV R1, #1
+MOV R2, #2
+MOV R3, #3
+MOV R4, #4
+STMIA R0!, {R1, R2, R3, R4}
+SUB R0, #16
+LDMIA R0!, {R1, R2, R3, R4}
+MOV R0, R1
+MOV R0, R2
+MOV R0, R3
+MOV R0, R4
+B end
+.align 4
+lmao: .word 0xFFFFFFFF
+end:

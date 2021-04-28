@@ -1,0 +1,62 @@
+ADR LR, main + 1
+BX LR
+.THUMB
+main:
+MOV R0, #4
+LSL R0, R0, #2
+LSR R0, R0, #4
+LSL R0, R0, #31
+ASR R0, R0, #31
+MOV R1, #69
+MOV R2, #20
+ADD R0, R1, R2
+ADD R0, R1, #5
+SUB R0, R1, R2
+SUB R0, R1, #5
+MOV R0, #255
+CMP R0, #255
+BNE end
+ADD R2, #1
+BEQ end
+SUB R0, #255
+BNE end
+MOV R1, #5
+MOV R2, #10
+AND R1, R2
+BNE end
+MOV R1, #5
+EOR R1, R2
+CMP R1, #15
+BNE end
+MOV R1, #5
+EOR R1, R1
+BNE end
+MOV R1, #15
+LSL R2, R1
+LSR R2, R1
+MOV R0, #0
+SUB R0, #1
+ASR R0, R2
+ADC R2, R0
+SBC R2, R0
+ROR R2, R2
+MOV R1, #5
+MOV R2, #10
+TST R1, R2
+BNE end
+TST R1, R1
+BEQ end
+NEG R1, R2
+CMN R1, R2
+BNE end
+MOV R1, #5
+ORR R1, R2
+CMP R1, #15
+BNE end
+MUL R1, R2
+CMP R1, #150
+BNE end
+BIC R1, R1
+BNE end
+MVN R1, R1
+end:

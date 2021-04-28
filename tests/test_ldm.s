@@ -1,0 +1,44 @@
+.section .text
+MOV R0, #200 @ Basic LDM - STM test
+MOV R1, #70
+MOV R2, #71
+MOV R3, #72
+STMIB R0!, {R1, R2, R3}
+LDMDA R0!, {R1, R2, R3}
+MOV R8, R1
+MOV R8, R2
+MOV R8, R3
+MOV R1, #45
+MOV R2, #46
+MOV R3, #47
+STMIA R0!, {R1, R2, R3}
+LDMDB R0!, {R1, R2, R3}
+MOV R8, R1
+MOV R8, R2
+MOV R8, R3
+MOV R1, #69
+MOV R2, #70
+MOV R3, #71
+STMDB R0!, {R1, R2, R3}
+LDMIA R0!, {R1, R2, R3}
+MOV R8, R1
+MOV R8, R2
+MOV R8, R3
+MOV R1, #33
+MOV R2, #34
+MOV R3, #35
+STMDA R0!, {R1, R2, R3}
+LDMIB R0, {R1, R2, R3}
+LDMIB R0!, {R13, R14}^ @ tests for user register transfer
+MOV R8, R1
+MOV R8, R2
+MOV R8, R3 @ Context switching test
+MSR SPSR_c, #16
+MOV SP, #400
+MOV R9, #lmao
+STR R9, [SP]
+LDMFA SP!,{PC}^
+MOV R0, #420
+lmao: MOV R0, #69
+MOV R0, R13
+MOV R0, R14

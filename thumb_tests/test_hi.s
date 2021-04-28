@@ -1,0 +1,21 @@
+ADR LR, main + 1
+ADR R8, lmao + 1
+ADR R9, yo + 1
+BX LR
+.THUMB
+main:
+MOV R5, #21
+MOV R10, R5
+MOV R11, R10
+ADD R3, R11
+CMP R3, R11
+BNE end
+CMP R11, R3
+BNE end
+MOV LR, R8
+BX LR
+lmao:
+BX R9
+yo:
+MOV R1, R0
+end:
