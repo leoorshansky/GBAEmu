@@ -68,12 +68,6 @@ struct Register{
     address: usize,
 }
 
-struct Pixel{
-    R: u8,
-    G: u8,
-    B: u8
-}
-
 
 
 impl Register{
@@ -145,7 +139,7 @@ pub fn draw(mem: &mut Mem, elapsed: Duration) -> (){
 
     let mut screen = RgbImage::new(240, 160);
     //display mode 1
-    if(control.getBits(0, 2) == 1){
+    if(control.getBits(VideoMode_START_BIT as u16, 2) == 1){
         let mut priorities:[usize; 4] = [0,0,0,0];
         for x in 0..4{
             let mut bgControl = Register {
@@ -157,65 +151,113 @@ pub fn draw(mem: &mut Mem, elapsed: Duration) -> (){
         }
 
         for i in 0..4{
-            addBGLayer(priorities[(4 - i - 1) as usize], &mut screen, mem);
+            if(control.getBit((BG0Display_BIT + i) as u16) == 1){
+                addBGTileLayer(priorities[(4 - i - 1) as usize], &mut screen, mem);
+        }
+    }
+    if(control.getBits(VideoMode_START_BIT as u16, 2) == 3){
+        if(control.getBit(BG2Display_BIT as u16) == 1){
+            addBGBitmapLayer(&mut screen, mem);
+        }
+    }
+
+    }
+}
+
+pub fn addBGTileLayer(bgNum: usize, screen: &mut RgbImage, mem: &mut Mem) -> (){
+
+    let mut bgControl = Register {
+        value: mem.get_halfword(BG_CNTRL_ADDR[bgNum]).little_endian(),
+        address: BG_CNTRL_ADDR[bgNum]
+    };
+    let xOffset: usize = mem.get_halfword(BG_HORIZONTAL_OFFSET_ADDR[bgNum]).little_endian() as usize;
+    let yOffset: usize = mem.get_halfword(BG_VERTICAL_OFFSET_ADDR[bgNum]).little_endian() as usize;
+    let charBase: usize = bgControl.getBits(2, 2) as usize;
+    let screenBase: usize = bgControl.getBits(8, 5) as usize;
+    let sizeMode: usize = bgControl.getBits(14,2) as usize;
+    let colorMode: usize = bgControl.getBit(PALETTES_BIT as u16) as usize;
+    let startTile = (yOffset/8) * 32 + (xOffset/8);
+    
+    for x in 0..240 {
+        for y in 0..160 {
+            let mut currentTile: usize = 0;
+            if(sizeMode == 0){
+                currentTile = (((yOffset + y) % 256)/8) * 32 + (((xOffset + x) % 256)/8);
+            }
+            else if(sizeMode == 1){
+                if(((xOffset + x) % 512) < 256){
+                    currentTile = (((yOffset + y) % 256)/8) * 32 + (((xOffset + x) % 512)/8);
+                }
+                else{
+                    currentTile = 1024 + (((yOffset + y) % 256)/8) * 32 + (((xOffset + x) % 256)/8);
+                }
+            }
+            else if(sizeMode == 2){
+                currentTile = (((yOffset + y) % 512)/8) * 32 + (((xOffset + x) % 256)/8);
+            }
+            else if(sizeMode == 3){
+                let currentTile = (((yOffset + y) % 512)/8) * 32 + (((xOffset + x) % 512)/8);
+            }
+            let mut xWithinTile: u8 = (x % 8) as u8;
+            let mut yWithinTile: u8 = (y % 8) as u8;
+            let tileMapAddr: usize = TILE_DATA_ADDR + screenBase * 2048;   
+            let currentTileAddr = tileMapAddr + 2 * currentTile;
+            let currentTileData = mem.get_halfword(currentTileAddr).little_endian();
+            let horizontalFlipping = (currentTileData / 2^10) % 2;
+            let verticalFlipping = (currentTileData / 2^11) % 2;
+            if(horizontalFlipping == 1){
+                xWithinTile = 7 - xWithinTile;
+            }
+            if(verticalFlipping == 1){
+                yWithinTile = 7 - yWithinTile;
+            }
+            let currentPixelNum: usize = (yWithinTile * 8 + xWithinTile) as usize;
+            let mut currentPixelData = 0;
+            let mut currentPixelColor: u16 = 0;
+            //256 color palette
+            if(colorMode == 1){
+                currentPixelData = mem.get_byte(TILE_DATA_ADDR + charBase * 0x4000 + (currentTileData % (2^8)) as usize * 0x40 + currentPixelNum);
+                currentPixelColor= mem.get_halfword(PRAM_START + (currentPixelData * 2) as usize).little_endian();
+            }
+            //16 color palette
+            else{
+                currentPixelData = mem.get_byte(TILE_DATA_ADDR + charBase * 0x4000 + (currentTileData % (2^8)) as usize * 0x20 + currentPixelNum / 2);
+                if(currentPixelNum % 2 ==0){
+                    currentPixelData = currentPixelData % 2^4;
+                }
+                else{
+                    currentPixelData = currentPixelData / (2^4);
+                }
+                currentPixelColor= mem.get_halfword(PRAM_START + ((currentTileData / 2^12) * 32) as usize + (currentPixelData * 2) as usize).little_endian();
+            }
+            let blueComp: u16 = (currentPixelColor / 2^10)  % (2^5);
+            let greenComp: u16 = (currentPixelColor / 2^5)  % (2^5); 
+            let redComp: u16 = (currentPixelColor)  % (2^5);
+            screen.put_pixel(x as u32, y as u32, Rgb([redComp as u8, greenComp as u8, blueComp as u8]));                
+        }
+    }
+    
+}
+
+pub fn addBGBitmapLayer(screen: &mut RgbImage, mem: &mut Mem) -> (){
+    let mut bgControl = Register {
+        value: mem.get_halfword(BG_CNTRL_ADDR[2]).little_endian(),
+        address: BG_CNTRL_ADDR[2]
+    };
+    let xOffset: usize = mem.get_halfword(BG_HORIZONTAL_OFFSET_ADDR[2]).little_endian() as usize;
+    let yOffset: usize = mem.get_halfword(BG_VERTICAL_OFFSET_ADDR[2]).little_endian() as usize;
+    for x in 0..240{
+        for y in 0..160{
+            let currentPixelColor = mem.get_halfword(TILE_DATA_ADDR + ((yOffset + y) * 160 + (xOffset + x)) * 2).little_endian(); 
+            let blueComp: u16 = (currentPixelColor / 2^10)  % (2^5);
+            let greenComp: u16 = (currentPixelColor / 2^5)  % (2^5); 
+            let redComp: u16 = (currentPixelColor)  % (2^5);
+            screen.put_pixel(x as u32, y as u32, Rgb([redComp as u8, greenComp as u8, blueComp as u8]));      
+
         }
     }
 
 }
 
-pub fn addBGLayer(bgNum: usize, screen: &mut RgbImage, mem: &mut Mem){
-    
-        let mut bgControl = Register {
-            value: mem.get_halfword(BG_CNTRL_ADDR[bgNum]).little_endian(),
-            address: BG_CNTRL_ADDR[bgNum]
-        };
-        let xOffset: usize = mem.get_halfword(BG_HORIZONTAL_OFFSET_ADDR[bgNum]).little_endian() as usize;
-        let yOffset: usize = mem.get_halfword(BG_VERTICAL_OFFSET_ADDR[bgNum]).little_endian() as usize;
-        let charBase: usize = bgControl.getBits(2, 2) as usize;
-        let screenBase: usize = bgControl.getBits(8, 5) as usize;
-        let sizeMode: usize = bgControl.getBits(14,2) as usize;
-        let colorMode: usize = bgControl.getBit(PALETTES_BIT as u16) as usize;
-        let startTile = (yOffset/8) * 32 + (xOffset/8);
-        
-        for x in 0..240 {
-            for y in 0..160 {
-                let mut currentTile: usize = 0;
-                if(sizeMode == 0){
-                    currentTile = (((yOffset + y) % 256)/8) * 32 + (((xOffset + x) % 256)/8);
-                }
-                else if(sizeMode == 1){
-                    if(((xOffset + x) % 512) < 256){
-                        currentTile = (((yOffset + y) % 256)/8) * 32 + (((xOffset + x) % 512)/8);
-                    }
-                    else{
-                        currentTile = 1024 + (((yOffset + y) % 256)/8) * 32 + (((xOffset + x) % 256)/8);
-                    }
-                }
-                else if(sizeMode == 2){
-                    currentTile = (((yOffset + y) % 512)/8) * 32 + (((xOffset + x) % 256)/8);
-                }
-                else if(sizeMode == 3){
-                    let currentTile = (((yOffset + y) % 512)/8) * 32 + (((xOffset + x) % 512)/8);
-                }
-                let xWithinTile: u8 = (x % 8) as u8;
-                let yWithinTile: u8 = (y % 8) as u8;
-                let tileMapAddr: usize = TILE_DATA_ADDR + screenBase * 2048;
-                let currentPixelNum: usize = (yWithinTile * 8 + xWithinTile) as usize;
-                //256 color mode
-                if(colorMode == 1){
-                    let currentTileAddr = tileMapAddr + 2 * currentTile;
-                    let currentPixelData = mem.get_halfword(TILE_DATA_ADDR + charBase * 0x4000 + currentTileAddr * 0x40 + currentPixelNum).little_endian();
-                    let blueComp: u16 = (currentPixelData / 2^10)  % (2^5);
-                    let greenComp: u16 = (currentPixelData / 2^5)  % (2^5); 
-                    let redComp: u16 = (currentPixelData)  % (2^5);
-                    screen.put_pixel(x as u32, y as u32, Rgb([redComp as u8, greenComp as u8, blueComp as u8]));
-                }
-                    //16 color mode
-                else{
-                        
-                }
-                    
-                
-            }
-        }
-}
+
+
