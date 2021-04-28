@@ -63,6 +63,15 @@ const SCANLINE_TIME: usize = 73099;
 const H_BLANK_TIME: usize = 56960;
 //Tile Data Information
 const TILE_DATA_ADDR:usize = 0x06000000;
+//Bitmap addresses
+const BITMAP_DATA_ADDR : usize = 0x06000000;
+const MODE3_DATA_ENDADDR : usize = 0x06013FFF;
+const MODE45_DATA_ENDADDR : usize = 0x06009FFF;
+//OBJ Tile Addresses 
+const OBJ_DATA_ADDR : usize = 0x06014000;
+const OBJ_DATA_ENDADDR : usize = 0x06017FFF;
+
+
 struct Register{
     value: u16,
     address: usize,

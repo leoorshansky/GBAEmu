@@ -4,7 +4,7 @@ pub mod audio;
 
 use std::fs::File;
 use std::time::{Duration, Instant};
-use graphics::gpu::{draw};
+//use graphics::gpu::{draw};
 use arm::{cpu, mem};
 use anyhow::Result;
 use graphics::window::createDisplay;
@@ -22,7 +22,7 @@ fn main() -> Result<()> {
     for _ in 0..200 {
         cpu.step(&mut ram);
         elapsed += Instant::now().duration_since(gpuCycleStart);
-        draw(&mut ram, elapsed);
+        //draw(&mut ram, elapsed);
 
     }
     
