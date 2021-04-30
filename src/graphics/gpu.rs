@@ -1,5 +1,6 @@
 use std::{time::Duration, u16, u8, usize};
-use image::{RgbImage, Rgb};
+use gtk::{EditableSignals, FileChooserButtonExt, PropagationPhase, accel_groups_from_object};
+use image::{GrayAlphaImage, Rgb, RgbImage};
 
 use crate::arm::mem::Mem;
 use crate::arm::common::{HalfWord};
@@ -63,6 +64,9 @@ const SCANLINE_TIME: usize = 73099;
 const H_BLANK_TIME: usize = 56960;
 //Tile Data Information
 const TILE_DATA_ADDR:usize = 0x06000000;
+//Sprite Tile Data/PRAM information
+const SPRITE_TILE_DATA_ADDR:usize = 0x06010000;
+const SPRITE_PRAM_ADDR:usize = 0x05000200;
 //Bitmap addresses
 const BITMAP_DATA_ADDR : usize = 0x06000000;
 const MODE3_DATA_ENDADDR : usize = 0x06013FFF;
@@ -70,9 +74,26 @@ const MODE45_DATA_ENDADDR : usize = 0x06009FFF;
 //OBJ Tile Addresses 
 const OBJ_DATA_ADDR : usize = 0x06014000;
 const OBJ_DATA_ENDADDR : usize = 0x06017FFF;
+//BG Rotation/Scaling Register Addresses
+const BG_X_SCALE_ADDR: [usize; 2] = [0x4000020, 0x4000030];
+const BG_Y_SCALE_ADDR: [usize; 2] = [0x4000026, 0x4000036];
+const BG_X_SHEAR_ADDR: [usize; 2] = [0x4000022, 0x4000032];
+const BG_Y_SHEAR_ADDR: [usize; 2] = [0x4000024, 0x4000034];
+const FRACTIONAL_PART_START_BIT: usize = 0;
+const FRACTIONAL_PART_END_BIT: usize = 7;
+const INTEGER_PART_START_BIT: usize = 8;
+const INTEGER_PART_END_BIT: usize = 14;
+const SIGN_BIT: usize = 15;
+const BG_AFFINE_HORIZONTAL_OFFSET: [usize; 2] = [0x4000028, 0x4000038];
+const BG_AFFINE_VERTICAL_OFFSET: [usize; 2] = [0x400002C, 0x400003C];
+const FRACTIONAL_PART_OFFSET_START_BIT: usize = 0;
+const FRACTIONAL_PART_OFFSET_END_BIT: usize = 7;
+const INTEGER_PART_OFFSET_START_BIT: usize = 8;
+const INTEGER_PART_OFFSET_END_BIT: usize = 26;
+const SIGN_OFFSET_BIT: usize = 27;
 
 
-struct Register{
+pub struct Register{
     value: u16,
     address: usize,
 }
@@ -147,6 +168,18 @@ pub fn draw(mem: &mut Mem, elapsed: Duration) -> (){
     }
 
     let mut screen = RgbImage::new(240, 160);
+    let mut prioritySprites: Vec<Vec<usize>> = Vec::new();
+    for i in 0..4{
+        prioritySprites.push(Vec::new());
+    }
+    for x in 0..128{
+        let attr0 = mem.get_word(OAM_START + 8 * x +  0 * 2).little_endian();
+        let attr2 = mem.get_word(OAM_START + 8 * x +  2 * 2).little_endian();
+        if((attr0 / 2^7) % 2^2 != 2){
+            let priority = (attr2 / (2^9)) % 2^2;
+            prioritySprites[priority as usize].push(x);
+        }
+    }
     //display mode 1
     if(control.getBits(VideoMode_START_BIT as u16, 2) == 1){
         let mut priorities:[usize; 4] = [0,0,0,0];
@@ -162,6 +195,14 @@ pub fn draw(mem: &mut Mem, elapsed: Duration) -> (){
         for i in 0..4{
             if(control.getBit((BG0Display_BIT + i) as u16) == 1){
                 addBGTileLayer(priorities[(4 - i - 1) as usize], &mut screen, mem);
+                for sprite in prioritySprites[i as usize].iter() {
+                    let x = *sprite;
+                    let controlCopy = Register {
+                        value: mem.get_halfword(REG_DISPCNT_ADDR).little_endian(),
+                        address: REG_DISPCNT_ADDR,
+                    };
+                    drawTiledSprite(x, &mut screen, mem, controlCopy);
+                }
         }
     }
     if(control.getBits(VideoMode_START_BIT as u16, 2) == 3){
@@ -174,77 +215,158 @@ pub fn draw(mem: &mut Mem, elapsed: Duration) -> (){
 }
 
 pub fn addBGTileLayer(bgNum: usize, screen: &mut RgbImage, mem: &mut Mem) -> (){
-
-    let mut bgControl = Register {
-        value: mem.get_halfword(BG_CNTRL_ADDR[bgNum]).little_endian(),
-        address: BG_CNTRL_ADDR[bgNum]
-    };
-    let xOffset: usize = mem.get_halfword(BG_HORIZONTAL_OFFSET_ADDR[bgNum]).little_endian() as usize;
-    let yOffset: usize = mem.get_halfword(BG_VERTICAL_OFFSET_ADDR[bgNum]).little_endian() as usize;
-    let charBase: usize = bgControl.getBits(2, 2) as usize;
-    let screenBase: usize = bgControl.getBits(8, 5) as usize;
-    let sizeMode: usize = bgControl.getBits(14,2) as usize;
-    let colorMode: usize = bgControl.getBit(PALETTES_BIT as u16) as usize;
-    let startTile = (yOffset/8) * 32 + (xOffset/8);
     
     for x in 0..240 {
         for y in 0..160 {
-            let mut currentTile: usize = 0;
-            if(sizeMode == 0){
-                currentTile = (((yOffset + y) % 256)/8) * 32 + (((xOffset + x) % 256)/8);
-            }
-            else if(sizeMode == 1){
-                if(((xOffset + x) % 512) < 256){
-                    currentTile = (((yOffset + y) % 256)/8) * 32 + (((xOffset + x) % 512)/8);
-                }
-                else{
-                    currentTile = 1024 + (((yOffset + y) % 256)/8) * 32 + (((xOffset + x) % 256)/8);
-                }
-            }
-            else if(sizeMode == 2){
-                currentTile = (((yOffset + y) % 512)/8) * 32 + (((xOffset + x) % 256)/8);
-            }
-            else if(sizeMode == 3){
-                let currentTile = (((yOffset + y) % 512)/8) * 32 + (((xOffset + x) % 512)/8);
-            }
-            let mut xWithinTile: u8 = (x % 8) as u8;
-            let mut yWithinTile: u8 = (y % 8) as u8;
-            let tileMapAddr: usize = TILE_DATA_ADDR + screenBase * 2048;   
-            let currentTileAddr = tileMapAddr + 2 * currentTile;
-            let currentTileData = mem.get_halfword(currentTileAddr).little_endian();
-            let horizontalFlipping = (currentTileData / 2^10) % 2;
-            let verticalFlipping = (currentTileData / 2^11) % 2;
-            if(horizontalFlipping == 1){
-                xWithinTile = 7 - xWithinTile;
-            }
-            if(verticalFlipping == 1){
-                yWithinTile = 7 - yWithinTile;
-            }
-            let currentPixelNum: usize = (yWithinTile * 8 + xWithinTile) as usize;
-            let mut currentPixelData = 0;
-            let mut currentPixelColor: u16 = 0;
-            //256 color palette
-            if(colorMode == 1){
-                currentPixelData = mem.get_byte(TILE_DATA_ADDR + charBase * 0x4000 + (currentTileData % (2^8)) as usize * 0x40 + currentPixelNum);
-                currentPixelColor= mem.get_halfword(PRAM_START + (currentPixelData * 2) as usize).little_endian();
-            }
-            //16 color palette
-            else{
-                currentPixelData = mem.get_byte(TILE_DATA_ADDR + charBase * 0x4000 + (currentTileData % (2^8)) as usize * 0x20 + currentPixelNum / 2);
-                if(currentPixelNum % 2 ==0){
-                    currentPixelData = currentPixelData % 2^4;
-                }
-                else{
-                    currentPixelData = currentPixelData / (2^4);
-                }
-                currentPixelColor= mem.get_halfword(PRAM_START + ((currentTileData / 2^12) * 32) as usize + (currentPixelData * 2) as usize).little_endian();
-            }
+            let currentPixelColor = getCurrentPixelColor(x, y, bgNum, false, mem);
             let blueComp: u16 = (currentPixelColor / 2^10)  % (2^5);
             let greenComp: u16 = (currentPixelColor / 2^5)  % (2^5); 
             let redComp: u16 = (currentPixelColor)  % (2^5);
             screen.put_pixel(x as u32, y as u32, Rgb([redComp as u8, greenComp as u8, blueComp as u8]));                
         }
     }
+    
+}
+
+pub fn drawTiledSprite(spriteNum: usize, screen: &mut RgbImage, mem: &mut Mem, control: Register) -> (){
+    
+    let attr0 = mem.get_word(OAM_START + 8 * spriteNum +  0 * 2).little_endian();
+    let attr2 = mem.get_word(OAM_START + 8 * spriteNum + 4 * 2).little_endian();
+    let attr1 = mem.get_word(OAM_START + 8 * spriteNum + 2 * 2).little_endian();
+    let attr3 = mem.get_word(OAM_START + 8 * spriteNum + 6 * 2).little_endian();
+    let sizeMode = (attr0 / (2^14));
+    let baseTile = attr2 % (2^9);
+    let colorMode = (attr0 / (2^13)) % 2;
+    let tileIndexingMode = control.getBit(ObjectMappingMode_BIT as u16);
+    let xCoord = attr1 % (2^8);
+    let yCoord = attr0 % (2^8);
+    let horizontalFlip = (attr1 / (2^12)) % 2;
+    let verticalFlip = (attr2 / (2^13)) % 2;
+
+    let spriteShape = (attr0 / (2^14));
+    let spriteSize = (attr1 / (2^14));
+
+    let mut xDim = 0;
+    let mut yDim = 0;
+    
+    if(spriteShape ==  0){
+        if(spriteSize == 0){
+            xDim = 8;
+            yDim = 8;
+        }
+        else if(spriteSize == 1){
+            xDim = 16;
+            yDim = 16;
+        }
+        else if(spriteSize == 2){
+            xDim = 32;
+            yDim = 32;
+        }
+        else if(spriteSize == 3){
+            xDim = 64;
+            yDim = 64;
+        }
+    }
+    else if(spriteShape == 1){
+        if(spriteSize == 0){
+            xDim = 16;
+            yDim = 8;
+        }
+        else if(spriteSize == 1){
+            xDim = 32;
+            yDim = 8;
+        }
+        else if(spriteSize == 2){
+            xDim = 32;
+            yDim = 16;
+        }
+        else if(spriteSize == 3){
+            xDim = 64;
+            yDim = 32;
+        }
+    }
+    else if(spriteShape == 2){
+        if(spriteSize == 0){
+            xDim = 8;
+            yDim = 16;
+        }
+        else if(spriteSize == 1){
+            xDim = 8;
+            yDim = 32;
+        }
+        else if(spriteSize == 2){
+            xDim = 16;
+            yDim = 32;
+        }
+        else if(spriteSize == 3){
+            xDim = 32;
+            yDim = 64;
+        }
+        let mut lastX = xCoord + xDim;
+        let mut lastY = yCoord + yDim;
+        if(xCoord + xDim > 240){
+            lastX = 240;
+        }
+        if(yCoord + yDim > 160){
+            lastY = 160;
+        }
+        for x in xCoord..lastX{
+            for y in yCoord..lastY{
+                let currentTile = (y / 8) * (xDim / 8) + (x/8);
+                let mut currentTileWithinMemory = 0;
+                if(tileIndexingMode == 1){
+                    if(colorMode == 1){
+                        currentTileWithinMemory = baseTile + (currentTile / (xDim / 8)) * 32 + (currentTile % (xDim/8)) * 2;
+                    }
+                    else{
+                        currentTileWithinMemory = baseTile + (currentTile / (xDim / 8)) * 32 + (currentTile % (xDim/8));
+                    }
+                }
+                else if(tileIndexingMode == 0){
+                    currentTileWithinMemory = baseTile + currentTile;
+                }
+                
+                let xWithinTile = x % 8;
+                let yWithinTile = y % 8;
+                let mut currentPixelData = 0;
+                let mut currentPixelColor = 0;
+                let currentPixelNum = yWithinTile * 8 + xWithinTile;
+                //256-color palette
+                if(colorMode == 1){
+                    currentPixelData = mem.get_byte(SPRITE_TILE_DATA_ADDR + (0x20 * currentTileWithinMemory + currentPixelNum) as usize); 
+                    currentPixelColor = mem.get_halfword(SPRITE_PRAM_ADDR + (2 * currentPixelData) as usize).little_endian();
+                }
+                //16 color palette
+                else if(colorMode == 0){
+                    let paletteNum = attr2 / (2^12);
+                    currentPixelData = mem.get_byte(SPRITE_TILE_DATA_ADDR + (0x20 * currentTileWithinMemory + currentPixelNum / 2) as usize);
+                    if(currentPixelNum % 2 == 0){
+                        currentPixelData = mem.get_byte(SPRITE_TILE_DATA_ADDR + (0x20 * currentTileWithinMemory + currentPixelNum) as usize)/ 2^4;
+                    }
+                    else{
+                        currentPixelData = mem.get_byte(SPRITE_TILE_DATA_ADDR + (0x20 * currentTileWithinMemory + currentPixelNum) as usize) % 2^4;
+                    }
+                    currentPixelColor = mem.get_halfword(SPRITE_PRAM_ADDR + (paletteNum * 32 + (currentPixelData * 2) as u32) as usize).little_endian();
+
+                }
+                let blueComp: u16 = (currentPixelColor / 2^10)  % (2^5);
+                let greenComp: u16 = (currentPixelColor / 2^5)  % (2^5); 
+                let redComp: u16 = (currentPixelColor)  % (2^5);
+                let mut screenX = x;
+                let mut screenY = y;
+                if(horizontalFlip == 1){
+                    screenX = lastX - (x - xCoord + 1);
+                }
+                if(verticalFlip == 1){
+                    screenY = lastY - (y - yCoord + 1);
+                }
+                screen.put_pixel(screenX as u32, screenY as u32, Rgb([redComp as u8, greenComp as u8, blueComp as u8]));  
+            }
+        }
+    }
+
+
+        
     
 }
 
@@ -268,5 +390,81 @@ pub fn addBGBitmapLayer(screen: &mut RgbImage, mem: &mut Mem) -> (){
 
 }
 
+pub fn getCurrentPixelColor(x: usize, y: usize, bgNum: usize, affine: bool, mem: &mut Mem) -> (u16){
+    let mut bgControl = Register {
+        value: mem.get_halfword(BG_CNTRL_ADDR[bgNum]).little_endian(),
+        address: BG_CNTRL_ADDR[bgNum]
+    };
+    let xOffset: usize = mem.get_halfword(BG_HORIZONTAL_OFFSET_ADDR[bgNum]).little_endian() as usize;
+    let yOffset: usize = mem.get_halfword(BG_VERTICAL_OFFSET_ADDR[bgNum]).little_endian() as usize;
+    let charBase: usize = bgControl.getBits(2, 2) as usize;
+    let screenBase: usize = bgControl.getBits(8, 5) as usize;
+    let sizeMode: usize = bgControl.getBits(14,2) as usize;
+    let colorMode: usize = bgControl.getBit(PALETTES_BIT as u16) as usize;
+    let startTile = (yOffset/8) * 32 + (xOffset/8);
 
+    let mut currentTile: usize = 0;
+    let mut xWithinTile = 0;
+    let mut yWithinTile = 0;
+    if(affine){
 
+    }
+    else{
+        if(sizeMode == 0){
+            currentTile = (((yOffset + y) % 256)/8) * 32 + (((xOffset + x) % 256)/8);
+        }
+        else if(sizeMode == 1){
+            if(((xOffset + x) % 512) < 256){
+                currentTile = (((yOffset + y) % 256)/8) * 32 + (((xOffset + x) % 512)/8);
+            }
+            else{
+                currentTile = 1024 + (((yOffset + y) % 256)/8) * 32 + (((xOffset + x) % 256)/8);
+            }
+        }
+        else if(sizeMode == 2){
+            currentTile = (((yOffset + y) % 512)/8) * 32 + (((xOffset + x) % 256)/8);
+        }
+        else if(sizeMode == 3){
+            let currentTile = (((yOffset + y) % 512)/8) * 32 + (((xOffset + x) % 512)/8);
+        }
+        xWithinTile= (x % 8) as u8;
+        yWithinTile= (y % 8) as u8;
+    }
+    let tileMapAddr: usize = TILE_DATA_ADDR + screenBase * 2048;   
+    let currentTileAddr = tileMapAddr + 2 * currentTile;
+    let currentTileData = mem.get_halfword(currentTileAddr).little_endian();
+    let horizontalFlipping = (currentTileData / 2^10) % 2;
+    let verticalFlipping = (currentTileData / 2^11) % 2;
+    if(affine){
+        
+    }
+    else{
+        if(horizontalFlipping == 1){
+            xWithinTile = 7 - xWithinTile;
+        }
+        if(verticalFlipping == 1){
+            yWithinTile = 7 - yWithinTile;
+        }
+    }
+    let currentPixelNum: usize = (yWithinTile * 8 + xWithinTile) as usize;
+    let mut currentPixelData = 0;
+    let mut currentPixelColor: u16 = 0;
+    //256 color palette
+    if(colorMode == 1){
+        currentPixelData = mem.get_byte(TILE_DATA_ADDR + charBase * 0x4000 + (currentTileData % (2^8)) as usize * 0x40 + currentPixelNum);
+        currentPixelColor= mem.get_halfword(PRAM_START + (currentPixelData * 2) as usize).little_endian();
+    }
+    //16 color palette
+    else{
+        currentPixelData = mem.get_byte(TILE_DATA_ADDR + charBase * 0x4000 + (currentTileData % (2^8)) as usize * 0x20 + currentPixelNum / 2);
+        if(currentPixelNum % 2 ==0){
+            currentPixelData = currentPixelData / 2^4;
+        }
+        else{
+            currentPixelData = currentPixelData % (2^4);
+        }
+        currentPixelColor= mem.get_halfword(PRAM_START + ((currentTileData / 2^12) * 32) as usize + (currentPixelData * 2) as usize).little_endian();
+    }
+    return currentPixelColor;
+    
+}
