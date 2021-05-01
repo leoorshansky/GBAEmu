@@ -23,16 +23,22 @@ ${THUMB_BIN_FILES} : %.bin : Makefile %.o
 C_FILES = ${wildcard c_tests/*.c}
 C_TEST_NAMES = ${subst .c,,${C_FILES}}
 C_BIN_FILES = ${addsuffix .bin,${C_TEST_NAMES}}
+C_THUMB_BIN_FILES = ${subst /,/thumb_,${C_BIN_FILES}}
 
 ${C_BIN_FILES} : %.bin : Makefile %.c c_tests/startup.s
-	arm-none-eabi-gcc -Tc_tests/script.ld -o $*.o $*.c c_tests/startup.s -nostdlib
+	arm-none-eabi-gcc -Tc_tests/script.ld -mcpu=arm7tdmi -o $*.o $*.c c_tests/startup.s -nostdlib -lgcc
 	arm-none-eabi-objcopy -O binary $*.o $@
+
+${C_THUMB_BIN_FILES} : c_tests/thumb_%.bin : Makefile c_tests/%.c c_tests/thumb_startup.s
+	arm-none-eabi-gcc -Tc_tests/script.ld -mthumb -mcpu=arm7tdmi -o c_tests/thumb_$*.o c_tests/$*.c c_tests/thumb_startup.s -nostdlib -lgcc
+	arm-none-eabi-objcopy -O binary c_tests/thumb_$*.o $@
 
 tests: Makefile ${BIN_FILES}
 
 thumb_tests: Makefile ${THUMB_BIN_FILES}
 
 c_tests: Makefile ${C_BIN_FILES}
+thumb_c_tests: Makefile ${C_THUMB_BIN_FILES}
 
 clean:
 	rm -f ${O_FILES}

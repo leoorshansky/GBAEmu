@@ -1,25 +1,28 @@
-use std::io::Read;
 use anyhow::Result;
+use std::io::{ErrorKind, Read};
 
 use crate::arm::common::{HalfWord, Word};
 
 pub struct Mem {
-    mem: Vec<u8>
+    mem: Vec<u8>,
 }
 
 impl Mem {
     pub fn new(size: usize) -> Self {
         let mut vec = Vec::with_capacity(size);
-        unsafe { vec.set_len(size); }
-        Mem {
-            mem: vec
+        unsafe {
+            vec.set_len(size);
         }
+        Mem { mem: vec }
     }
 
-    pub fn load(&mut self, offset: usize, bios: impl Read) -> Result<()> {
-        for (i, byte) in bios.bytes().enumerate() {
-            self.mem[offset + i] = byte?;
-        }
+    pub fn load(&mut self, first_byte: usize, mut bios: impl Read) -> std::io::Result<()> {
+        let buf = &mut self.mem[first_byte..];
+        if let Err(e) = bios.read_exact(buf) {
+            if e.kind() != ErrorKind::UnexpectedEof {
+                return Err(e);
+            }
+        }   
         Ok(())
     }
 
@@ -50,14 +53,19 @@ impl Mem {
     #[inline(always)]
     pub fn get_halfword(&self, byte_index: usize) -> HalfWord {
         HalfWord {
-            bytes: [self.mem[byte_index], self.mem[byte_index + 1]]
+            bytes: [self.mem[byte_index], self.mem[byte_index + 1]],
         }
     }
 
     #[inline(always)]
     pub fn get_word(&self, byte_index: usize) -> Word {
         Word {
-            bytes: [self.mem[byte_index], self.mem[byte_index + 1], self.mem[byte_index + 2], self.mem[byte_index + 3]]
+            bytes: [
+                self.mem[byte_index],
+                self.mem[byte_index + 1],
+                self.mem[byte_index + 2],
+                self.mem[byte_index + 3],
+            ],
         }
     }
 }
