@@ -3,6 +3,7 @@
 #![allow(non_upper_case_globals)]
 #![allow(unused_mut)]
 #![allow(unused_parens)]
+#![allow(unused_variables)]
 use std::{time::Duration, u16, u8, usize};
 use image::{Rgb, RgbImage};
 
