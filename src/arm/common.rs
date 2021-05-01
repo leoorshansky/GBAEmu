@@ -1,5 +1,5 @@
 pub struct HalfWord {
-    pub bytes: [u8; 2]
+    pub bytes: [u8; 2],
 }
 
 impl HalfWord {
@@ -16,20 +16,20 @@ impl HalfWord {
     #[inline(always)]
     pub fn from_u16_le(data: u16) -> Self {
         Self {
-            bytes: data.to_le_bytes()
+            bytes: data.to_le_bytes(),
         }
     }
 
     #[inline(always)]
     pub fn from_u16_be(data: u16) -> Self {
         Self {
-            bytes: data.to_be_bytes()
+            bytes: data.to_be_bytes(),
         }
     }
 }
 
 pub struct Word {
-    pub bytes: [u8; 4]
+    pub bytes: [u8; 4],
 }
 
 impl Word {
@@ -46,14 +46,14 @@ impl Word {
     #[inline(always)]
     pub fn from_u32_le(data: u32) -> Self {
         Self {
-            bytes: data.to_le_bytes()
+            bytes: data.to_le_bytes(),
         }
     }
 
     #[inline(always)]
     pub fn from_u32_be(data: u32) -> Self {
         Self {
-            bytes: data.to_be_bytes()
+            bytes: data.to_be_bytes(),
         }
     }
 }

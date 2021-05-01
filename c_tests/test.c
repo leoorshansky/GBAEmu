@@ -1,15 +1,14 @@
-struct retVal {
-    int one;
-    int two;
-};
-
 int lmao(int x) {
     static int y = 5;
     y++;
     return x + y;
 }
 
-struct retVal main() {
+int yeet(int z, int y) {
+    return z * y;
+}
+
+int main() {
     int a = 1;
     int b = 1;
     for (int i = 0; i < 25; i++) {
@@ -25,5 +24,5 @@ struct retVal main() {
         a = c;
         lmao(a);
     }
-    return (struct retVal) {b, lmao(0)};
+    return lmao(yeet(30, 4000) % 5);
 }
