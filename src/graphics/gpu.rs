@@ -7,7 +7,7 @@
 use std::{time::Duration, u16, u8, usize};
 use image::{Rgb, RgbImage};
 
-use crate::arm::mem::Mem;
+use crate::arm::{cpu::Cpu, mem::Mem};
 use crate::arm::common::{HalfWord};
 
 const PRAM_START: usize = 0x05000000;
@@ -136,7 +136,7 @@ impl Register{
 }
 
 
-pub fn draw(mem: &mut Mem, elapsed: Duration) {
+pub fn draw(mem: &mut Mem, cpu: &mut Cpu, elapsed: Duration) {
     //initializing video registers
     let mut control = Register {
         value: mem.get_halfword(REG_DISPCNT_ADDR).little_endian(),
@@ -153,7 +153,16 @@ pub fn draw(mem: &mut Mem, elapsed: Duration) {
     //setting up timing
     let mut currentCycle = elapsed.as_nanos() % CYCLE_TIME as u128;
     vCounter.setValue(((currentCycle / CYCLE_TIME as u128) * 227 )as u16, mem);
+    if(vCounter.getValue() == status.getBits(VCountTriggerValue_START_BIT as u16, 7)){
+        if(status.getBit(VCountInterruptRequest_BIT as u16) == 1){
+            cpu.irq();
+        }
+        status.setBit(1, VCountTrigger_BIT, mem);
+    }
     if(currentCycle > V_BLANK_TIME as u128){
+        if(status.getBit(VBlankInterruptRequest_BIT as u16) == 1){
+            cpu.irq();
+        }
         status.setBit(1, VBlank_BIT, mem);
         return;
     }
@@ -162,6 +171,9 @@ pub fn draw(mem: &mut Mem, elapsed: Duration) {
     }
     let mut currentScanline = elapsed.as_nanos() % SCANLINE_TIME as u128;
     if(currentCycle > H_BLANK_TIME as u128){
+        if(status.getBit(HBlankInterruptRequest_BIT as u16) == 1){
+            cpu.irq();
+        }
         status.setBit(1, HBlank_BIT, mem);
     }
     else{
