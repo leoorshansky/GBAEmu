@@ -152,6 +152,7 @@ pub fn draw(mem: &mut Mem, elapsed: Duration) {
     };
     //setting up timing
     let mut currentCycle = elapsed.as_nanos() % CYCLE_TIME as u128;
+    vCounter.setValue(((currentCycle / CYCLE_TIME as u128) * 227 )as u16, mem);
     if(currentCycle > V_BLANK_TIME as u128){
         status.setBit(1, VBlank_BIT, mem);
         return;
@@ -166,7 +167,6 @@ pub fn draw(mem: &mut Mem, elapsed: Duration) {
     else{
         status.setBit(0, HBlank_BIT, mem);
     }
-
     let mut screen = RgbImage::new(240, 160);
     let mut prioritySprites: Vec<Vec<usize>> = Vec::new();
     for i in 0..4{

@@ -76,29 +76,29 @@ impl Cpu {
         let state = self.get_state();
         let mode = self.get_mode();
 
-        if self.regs[15] == 0x1778 {
-            let mut file = File::create("logs/wram_dump.hex").unwrap();
-            for address in 0x3000000..=0x3007FFF {
-                let buf = [ram.get_byte(address)];
-                file.write_all(&buf).unwrap();
-            }
-            let mut file = File::create("logs/palette_dump.hex").unwrap();
-            for address in 0x5000000..=0x50003FF {
-                let buf = [ram.get_byte(address)];
-                file.write_all(&buf).unwrap();
-            }
-            let mut file = File::create("logs/vram_dump.hex").unwrap();
-            for address in 0x6000000..=0x6017FFF {
-                let buf = [ram.get_byte(address)];
-                file.write_all(&buf).unwrap();
-            }
-            let mut file = File::create("logs/oam_dump.hex").unwrap();
-            for address in 0x7000000..=0x70003FF {
-                let buf = [ram.get_byte(address)];
-                file.write_all(&buf).unwrap();
-            }
-            return None;
-        }
+        // if self.regs[15] == 0x1778 {
+        //     let mut file = File::create("logs/wram_dump.hex").unwrap();
+        //     for address in 0x3000000..=0x3007FFF {
+        //         let buf = [ram.get_byte(address)];
+        //         file.write_all(&buf).unwrap();
+        //     }
+        //     let mut file = File::create("logs/palette_dump.hex").unwrap();
+        //     for address in 0x5000000..=0x50003FF {
+        //         let buf = [ram.get_byte(address)];
+        //         file.write_all(&buf).unwrap();
+        //     }
+        //     let mut file = File::create("logs/vram_dump.hex").unwrap();
+        //     for address in 0x6000000..=0x6017FFF {
+        //         let buf = [ram.get_byte(address)];
+        //         file.write_all(&buf).unwrap();
+        //     }
+        //     let mut file = File::create("logs/oam_dump.hex").unwrap();
+        //     for address in 0x7000000..=0x70003FF {
+        //         let buf = [ram.get_byte(address)];
+        //         file.write_all(&buf).unwrap();
+        //     }
+        //     return None;
+        // }
 
         let instruction = self.execute_stage;
         self.execute_stage = self.decode_stage;
