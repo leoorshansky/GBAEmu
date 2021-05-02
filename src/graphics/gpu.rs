@@ -4,8 +4,10 @@
 #![allow(unused_mut)]
 #![allow(unused_parens)]
 #![allow(unused_variables)]
+extern crate gdk_pixbuf;
 use std::{time::Duration, u16, u8, usize};
-use image::{Rgb, RgbImage};
+use gdk_pixbuf::{Pixbuf, Colorspace};
+use image::{RgbImage, Rgb};
 
 use crate::arm::{cpu::Cpu, mem::Mem};
 use crate::arm::common::{HalfWord};
@@ -136,7 +138,7 @@ impl Register{
 }
 
 
-pub fn draw(mem: &mut Mem, cpu: &mut Cpu, elapsed: Duration) {
+pub fn draw(mem: &mut Mem, cpu: &mut Cpu, elapsed: Duration) -> (RgbImage) {
     //initializing video registers
     let mut control = Register {
         value: mem.get_halfword(REG_DISPCNT_ADDR).little_endian(),
@@ -164,13 +166,13 @@ pub fn draw(mem: &mut Mem, cpu: &mut Cpu, elapsed: Duration) {
             cpu.irq();
         }
         status.setBit(1, VBlank_BIT, mem);
-        return;
+        return RgbImage::new(240, 160);
     }
     else{
         status.setBit(0, VBlank_BIT, mem);
     }
     let mut currentScanline = elapsed.as_nanos() % SCANLINE_TIME as u128;
-    if(currentCycle > H_BLANK_TIME as u128){
+    if(currentScanline > H_BLANK_TIME as u128){
         if(status.getBit(HBlankInterruptRequest_BIT as u16) == 1){
             cpu.irq();
         }
@@ -179,21 +181,25 @@ pub fn draw(mem: &mut Mem, cpu: &mut Cpu, elapsed: Duration) {
     else{
         status.setBit(0, HBlank_BIT, mem);
     }
+    // let mut screen = Pixbuf::new(Colorspace::Rgb, false, 15, 240, 160).unwrap();
     let mut screen = RgbImage::new(240, 160);
-    let mut prioritySprites: Vec<Vec<usize>> = Vec::new();
-    for i in 0..4{
-        prioritySprites.push(Vec::new());
-    }
-    for x in 0..128{
-        let attr0 = mem.get_word(OAM_START + 8 * x +  0 * 2).little_endian();
-        let attr2 = mem.get_word(OAM_START + 8 * x +  2 * 2).little_endian();
-        if((attr0 >> 7) & 0b11 != 2){
-            let priority = (attr2 >> 9) & 0b11;
-            prioritySprites[priority as usize].push(x);
-        }
-    }
+ 
+
+
     //display mode 1
     if(control.getBits(VideoMode_START_BIT as u16, 2) == 1){
+        let mut prioritySprites: Vec<Vec<usize>> = Vec::new();
+        for i in 0..4{
+            prioritySprites.push(Vec::new());
+        }
+        for x in 0..128{
+            let attr0 = mem.get_word(OAM_START + 8 * x +  0 * 2).little_endian();
+            let attr2 = mem.get_word(OAM_START + 8 * x +  2 * 2).little_endian();
+            if((attr0 >> 7) & 0b11 != 2){
+                let priority = (attr2 >> 9) & 0b11;
+                prioritySprites[priority as usize].push(x);
+            }
+        }
         let mut priorities:[usize; 4] = [0,0,0,0];
         for x in 0..4{
             let mut bgControl = Register {
@@ -215,6 +221,7 @@ pub fn draw(mem: &mut Mem, cpu: &mut Cpu, elapsed: Duration) {
                     };
                     drawTiledSprite(x, &mut screen, mem, controlCopy);
                 }
+            }
         }
     }
     if(control.getBits(VideoMode_START_BIT as u16, 2) == 3){
@@ -222,9 +229,10 @@ pub fn draw(mem: &mut Mem, cpu: &mut Cpu, elapsed: Duration) {
             addBGBitmapLayer(&mut screen, mem);
         }
     }
+    return screen;
 
-    }
 }
+
 
 pub fn addBGTileLayer(bgNum: usize, screen: &mut RgbImage, mem: &mut Mem) {
     for x in 0..240 {
@@ -371,7 +379,7 @@ pub fn drawTiledSprite(spriteNum: usize, screen: &mut RgbImage, mem: &mut Mem, c
             if(verticalFlip == 1){
                 screenY = lastY - (y - yCoord + 1);
             }
-            screen.put_pixel(screenX as u32, screenY as u32, Rgb([redComp as u8, greenComp as u8, blueComp as u8]));  
+            screen.put_pixel(x as u32, y as u32, Rgb([redComp as u8, greenComp as u8, blueComp as u8]));                
         }
     }
 }
@@ -391,7 +399,7 @@ pub fn addBGBitmapLayer(screen: &mut RgbImage, mem: &mut Mem) {
             let blueComp: u16 = (currentPixelColor >> 10) & 0b11111;
             let greenComp: u16 = (currentPixelColor >> 5) & 0b11111; 
             let redComp: u16 = currentPixelColor & 0b11111;
-            screen.put_pixel(x as u32, y as u32, Rgb([redComp as u8, greenComp as u8, blueComp as u8]));      
+            screen.put_pixel(x as u32, y as u32, Rgb([redComp as u8, greenComp as u8, blueComp as u8]));                
 
         }
     }

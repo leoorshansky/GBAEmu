@@ -5,7 +5,8 @@ pub mod graphics;
 use std::env;
 use std::fs::File;
 use std::time::{Duration, Instant};
-//use graphics::gpu::{draw};
+use graphics::gpu::{draw};
+use show_image::{ImageView, ImageInfo, create_window};
 use anyhow::Result;
 use arm::{cpu, mem};
 use audio::apu::make_a_sound;
@@ -22,6 +23,8 @@ fn main() -> Result<()> {
     let mut cpu = cpu::Cpu::new();
     cpu.reset();
     //cpu.toggle_debug();
+    let window = create_window("RBA", Default::default()).unwrap();
+    
     let mut elapsed = Duration::from_millis(0);
     let gpuCycleStart = Instant::now();
     let mut instructions = 0;
@@ -30,8 +33,8 @@ fn main() -> Result<()> {
         if cpu.step(&mut ram).is_none() {
             break;
         }
-        elapsed += Instant::now().duration_since(gpuCycleStart);
-        //draw(&mut ram, elapsed);
+        elapsed = Instant::now().duration_since(gpuCycleStart);
+        window.set_image("RBA", draw(&mut ram, & mut cpu, elapsed));
     }
 
     // For zlib test
