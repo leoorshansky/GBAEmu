@@ -30,6 +30,8 @@ pub struct Cpu {
     decode_stage: u32,
     execute_stage: u32,
     debug: bool,
+    irq_input: bool,
+    fiq_input: bool
 }
 
 #[derive(Copy, Clone, PartialEq, Debug)]
@@ -62,6 +64,8 @@ impl Cpu {
             decode_stage: NOP,
             execute_stage: NOP,
             debug: false,
+            irq_input: false,
+            fiq_input: false
         }
     }
 
@@ -76,33 +80,50 @@ impl Cpu {
         let state = self.get_state();
         let mode = self.get_mode();
 
-        if self.regs[15] == 0x1778 {
-            let mut file = File::create("logs/wram_dump.hex").unwrap();
-            for address in 0x3000000..=0x3007FFF {
-                let buf = [ram.get_byte(address)];
-                file.write_all(&buf).unwrap();
-            }
-            let mut file = File::create("logs/palette_dump.hex").unwrap();
-            for address in 0x5000000..=0x50003FF {
-                let buf = [ram.get_byte(address)];
-                file.write_all(&buf).unwrap();
-            }
-            let mut file = File::create("logs/vram_dump.hex").unwrap();
-            for address in 0x6000000..=0x6017FFF {
-                let buf = [ram.get_byte(address)];
-                file.write_all(&buf).unwrap();
-            }
-            let mut file = File::create("logs/oam_dump.hex").unwrap();
-            for address in 0x7000000..=0x70003FF {
-                let buf = [ram.get_byte(address)];
-                file.write_all(&buf).unwrap();
-            }
-            return None;
-        }
+        // if self.regs[15] == 0x1778 {
+        //     let mut file = File::create("logs/wram_dump.hex").unwrap();
+        //     for address in 0x3000000..=0x3007FFF {
+        //         let buf = [ram.get_byte(address)];
+        //         file.write_all(&buf).unwrap();
+        //     }
+        //     let mut file = File::create("logs/palette_dump.hex").unwrap();
+        //     for address in 0x5000000..=0x50003FF {
+        //         let buf = [ram.get_byte(address)];
+        //         file.write_all(&buf).unwrap();
+        //     }
+        //     let mut file = File::create("logs/vram_dump.hex").unwrap();
+        //     for address in 0x6000000..=0x6017FFF {
+        //         let buf = [ram.get_byte(address)];
+        //         file.write_all(&buf).unwrap();
+        //     }
+        //     let mut file = File::create("logs/oam_dump.hex").unwrap();
+        //     for address in 0x7000000..=0x70003FF {
+        //         let buf = [ram.get_byte(address)];
+        //         file.write_all(&buf).unwrap();
+        //     }
+        //     return None;
+        // }
 
         let instruction = self.execute_stage;
         self.execute_stage = self.decode_stage;
         self.decode_stage = ram.get_word(self.regs[15] as usize).little_endian();
+
+        let pc = self.regs[15] - if let State::Arm = state { 8 } else { 4 };
+
+        if self.fiq_input && !self.get_status_bit(BIT_F) || self.irq_input && !self.get_status_bit(BIT_I) {
+            let mode = if self.fiq_input { Mode::Fiq } else { Mode::Irq };
+            self.regs[self.get_register_index(mode, 14)] = pc + 4;
+            self.regs[self.get_psr_index(mode)] = self.regs[REG_CPSR];
+            self.set_mode(mode);
+            self.decode_stage = NOP;
+            self.execute_stage = NOP;
+            self.regs[15] = if self.fiq_input { 0x1C } else { 0x18 };
+            self.set_status_bit(BIT_I, true);
+            if self.fiq_input {
+                self.set_status_bit(BIT_F, true);
+            }
+            return Some(());
+        }
 
         if instruction == NOP || instruction == THUMB_NOP {
             self.regs[15] += match state {
@@ -119,8 +140,6 @@ impl Cpu {
             // REMOVE THIS AFTER DEBUGGING -------------------------------------------------------------------------------------------------
             return None;
         }
-
-        let pc = self.regs[15] - if let State::Arm = state { 8 } else { 4 };
 
         if let State::Arm = state {
             let mut branching = false;
@@ -240,6 +259,7 @@ impl Cpu {
                     }
                     branching = true;
                     self.regs[15] = 4;
+                    self.set_status_bit(BIT_I, true);
                     self.decode_stage = NOP;
                     self.execute_stage = NOP;
                 } else if (instruction << 4) >> 8 == BX_27_4 {
@@ -755,6 +775,7 @@ impl Cpu {
                     self.regs[15] = 8;
                     self.decode_stage = NOP;
                     self.execute_stage = NOP;
+                    self.set_status_bit(BIT_I, true);
                 }
 
                 if self.debug {
@@ -1349,6 +1370,7 @@ impl Cpu {
                 self.regs[15] = 8;
                 self.decode_stage = NOP;
                 self.execute_stage = NOP;
+                self.set_status_bit(BIT_I, true);
             } else if opcode >> 1 == 13 {
                 // Conditional Branch
                 debug_string = "B";
@@ -1428,6 +1450,14 @@ impl Cpu {
 
     pub fn toggle_debug(&mut self) {
         self.debug = !self.debug;
+    }
+
+    pub fn irq(&mut self) {
+        self.irq_input = true;
+    }
+
+    pub fn fiq(&mut self) {
+        self.fiq_input = true;
     }
 
     #[inline(always)]

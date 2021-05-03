@@ -3,10 +3,13 @@
 #![allow(non_upper_case_globals)]
 #![allow(unused_mut)]
 #![allow(unused_parens)]
+#![allow(unused_variables)]
+extern crate gdk_pixbuf;
 use std::{time::Duration, u16, u8, usize};
-use image::{Rgb, RgbImage};
+use gdk_pixbuf::{Pixbuf, Colorspace};
+use image::{RgbImage, Rgb};
 
-use crate::arm::mem::Mem;
+use crate::arm::{cpu::Cpu, mem::Mem};
 use crate::arm::common::{HalfWord};
 
 const PRAM_START: usize = 0x05000000;
@@ -96,7 +99,7 @@ const INTEGER_PART_OFFSET_END_BIT: usize = 26;
 const SIGN_OFFSET_BIT: usize = 27;
 
 
-pub struct Register{
+pub struct Register {
     value: u16,
     address: usize,
 }
@@ -108,36 +111,34 @@ impl Register{
        self.value
     }
     fn getBit(&self, n: u16) -> u16{
-        (self.value / 2^n) % 2
+        self.value >> n & 1
     }
-    fn getBits(&self, start: u16, length: u16) -> u16{
-        (self.value / 2^start) % 2^length
+    fn getBits(&self, start: u16, num_bits: u16) -> u16 {
+        (self.value >> start) % (1 << num_bits)
     }
-    fn setValue(&mut self, v: u16, mem: &mut Mem) -> (){
+    fn setValue(&mut self, v: u16, mem: &mut Mem) {
         self.value = v;
         let hw = HalfWord::from_u16_le(self.value);
         mem.set_halfword(self.address, hw);        
     }
-    fn setBit(&mut self, v: u8, n: u8, mem: &mut Mem) -> (){
+    fn setBit(&mut self, v: u8, n: u8, mem: &mut Mem) {
         if v == 0 {
-            let i: u16 = 2^16 - 2^(n as u16);
-            self.value = self.value & i;
+            self.value &= !(1 << n);
         }
         else if v == 1 {
-            let i: u16 = 2^(n as u16);
-            self.value = self.value | i;
+            self.value |= 1 << n;
         }
         else{
             //this should never occur
             println!("your mom");
         }
         let hw = HalfWord::from_u16_le(self.value);
-        mem.set_halfword(self.address, hw);   
+        mem.set_halfword(self.address, hw);
     }
 }
 
 
-pub fn draw(mem: &mut Mem, elapsed: Duration) -> (){
+pub fn draw(mem: &mut Mem, cpu: &mut Cpu, elapsed: Duration) -> (RgbImage) {
     //initializing video registers
     let mut control = Register {
         value: mem.get_halfword(REG_DISPCNT_ADDR).little_endian(),
@@ -153,36 +154,52 @@ pub fn draw(mem: &mut Mem, elapsed: Duration) -> (){
     };
     //setting up timing
     let mut currentCycle = elapsed.as_nanos() % CYCLE_TIME as u128;
+    vCounter.setValue(((currentCycle / CYCLE_TIME as u128) * 227 )as u16, mem);
+    if(vCounter.getValue() == status.getBits(VCountTriggerValue_START_BIT as u16, 7)){
+        if(status.getBit(VCountInterruptRequest_BIT as u16) == 1){
+            cpu.irq();
+        }
+        status.setBit(1, VCountTrigger_BIT, mem);
+    }
     if(currentCycle > V_BLANK_TIME as u128){
+        if(status.getBit(VBlankInterruptRequest_BIT as u16) == 1){
+            cpu.irq();
+        }
         status.setBit(1, VBlank_BIT, mem);
-        return;
+        return RgbImage::new(240, 160);
     }
     else{
         status.setBit(0, VBlank_BIT, mem);
     }
     let mut currentScanline = elapsed.as_nanos() % SCANLINE_TIME as u128;
-    if(currentCycle > H_BLANK_TIME as u128){
+    if(currentScanline > H_BLANK_TIME as u128){
+        if(status.getBit(HBlankInterruptRequest_BIT as u16) == 1){
+            cpu.irq();
+        }
         status.setBit(1, HBlank_BIT, mem);
     }
     else{
         status.setBit(0, HBlank_BIT, mem);
     }
-
+    // let mut screen = Pixbuf::new(Colorspace::Rgb, false, 15, 240, 160).unwrap();
     let mut screen = RgbImage::new(240, 160);
-    let mut prioritySprites: Vec<Vec<usize>> = Vec::new();
-    for i in 0..4{
-        prioritySprites.push(Vec::new());
-    }
-    for x in 0..128{
-        let attr0 = mem.get_word(OAM_START + 8 * x +  0 * 2).little_endian();
-        let attr2 = mem.get_word(OAM_START + 8 * x +  2 * 2).little_endian();
-        if((attr0 / 2^7) % 2^2 != 2){
-            let priority = (attr2 / (2^9)) % 2^2;
-            prioritySprites[priority as usize].push(x);
-        }
-    }
+ 
+
+
     //display mode 1
     if(control.getBits(VideoMode_START_BIT as u16, 2) == 1){
+        let mut prioritySprites: Vec<Vec<usize>> = Vec::new();
+        for i in 0..4{
+            prioritySprites.push(Vec::new());
+        }
+        for x in 0..128{
+            let attr0 = mem.get_word(OAM_START + 8 * x +  0 * 2).little_endian();
+            let attr2 = mem.get_word(OAM_START + 8 * x +  2 * 2).little_endian();
+            if((attr0 >> 7) & 0b11 != 2){
+                let priority = (attr2 >> 9) & 0b11;
+                prioritySprites[priority as usize].push(x);
+            }
+        }
         let mut priorities:[usize; 4] = [0,0,0,0];
         for x in 0..4{
             let mut bgControl = Register {
@@ -204,6 +221,7 @@ pub fn draw(mem: &mut Mem, elapsed: Duration) -> (){
                     };
                     drawTiledSprite(x, &mut screen, mem, controlCopy);
                 }
+            }
         }
     }
     if(control.getBits(VideoMode_START_BIT as u16, 2) == 3){
@@ -211,27 +229,27 @@ pub fn draw(mem: &mut Mem, elapsed: Duration) -> (){
             addBGBitmapLayer(&mut screen, mem);
         }
     }
+    return screen;
 
-    }
 }
 
-pub fn addBGTileLayer(bgNum: usize, screen: &mut RgbImage, mem: &mut Mem) -> (){
-    
+
+pub fn addBGTileLayer(bgNum: usize, screen: &mut RgbImage, mem: &mut Mem) {
     for x in 0..240 {
         for y in 0..160 {
             let currentPixelColor = getCurrentPixelColor(x, y, bgNum, false, mem);
-            let blueComp: u16 = (currentPixelColor / 2^10)  % (2^5);
-            let greenComp: u16 = (currentPixelColor / 2^5)  % (2^5); 
-            let redComp: u16 = (currentPixelColor)  % (2^5);
+            let blueComp: u16 = (currentPixelColor >> 10) & 0b11111;
+            let greenComp: u16 = (currentPixelColor >> 5) % 0b11111; 
+            let redComp: u16 = currentPixelColor & 0b11111;
             screen.put_pixel(x as u32, y as u32, Rgb([redComp as u8, greenComp as u8, blueComp as u8]));                
         }
     }
     
 }
 
-pub fn drawTiledSprite(spriteNum: usize, screen: &mut RgbImage, mem: &mut Mem, control: Register) -> (){
+pub fn drawTiledSprite(spriteNum: usize, screen: &mut RgbImage, mem: &mut Mem, control: Register) {
     
-    let attr0 = mem.get_word(OAM_START + 8 * spriteNum +  0 * 2).little_endian();
+    let attr0 = mem.get_word(OAM_START + 8 * spriteNum + 0 * 2).little_endian();
     let attr2 = mem.get_word(OAM_START + 8 * spriteNum + 4 * 2).little_endian();
     let attr1 = mem.get_word(OAM_START + 8 * spriteNum + 2 * 2).little_endian();
     let attr3 = mem.get_word(OAM_START + 8 * spriteNum + 6 * 2).little_endian();
@@ -343,17 +361,16 @@ pub fn drawTiledSprite(spriteNum: usize, screen: &mut RgbImage, mem: &mut Mem, c
                 let paletteNum = attr2 / (2^12);
                 currentPixelData = mem.get_byte(SPRITE_TILE_DATA_ADDR + (0x20 * currentTileWithinMemory + currentPixelNum / 2) as usize);
                 if(currentPixelNum % 2 == 0){
-                    currentPixelData = mem.get_byte(SPRITE_TILE_DATA_ADDR + (0x20 * currentTileWithinMemory + currentPixelNum) as usize)/ 2^4;
-                }
-                else{
-                    currentPixelData = mem.get_byte(SPRITE_TILE_DATA_ADDR + (0x20 * currentTileWithinMemory + currentPixelNum) as usize) % 2^4;
+                    currentPixelData = mem.get_byte(SPRITE_TILE_DATA_ADDR + (0x20 * currentTileWithinMemory + currentPixelNum) as usize) >> 4;
+                } else{
+                    currentPixelData = mem.get_byte(SPRITE_TILE_DATA_ADDR + (0x20 * currentTileWithinMemory + currentPixelNum) as usize) & 0b1111;
                 }
                 currentPixelColor = mem.get_halfword(SPRITE_PRAM_ADDR + (paletteNum * 32 + (currentPixelData * 2) as u32) as usize).little_endian();
 
             }
-            let blueComp: u16 = (currentPixelColor / 2^10)  % (2^5);
-            let greenComp: u16 = (currentPixelColor / 2^5)  % (2^5); 
-            let redComp: u16 = (currentPixelColor)  % (2^5);
+            let blueComp: u16 = currentPixelColor >> 10 & 0b11111;
+            let greenComp: u16 = currentPixelColor >> 5 & 0b11111; 
+            let redComp: u16 = (currentPixelColor) & 0b11111;
             let mut screenX = x;
             let mut screenY = y;
             if(horizontalFlip == 1){
@@ -362,14 +379,14 @@ pub fn drawTiledSprite(spriteNum: usize, screen: &mut RgbImage, mem: &mut Mem, c
             if(verticalFlip == 1){
                 screenY = lastY - (y - yCoord + 1);
             }
-            screen.put_pixel(screenX as u32, screenY as u32, Rgb([redComp as u8, greenComp as u8, blueComp as u8]));  
+            screen.put_pixel(x as u32, y as u32, Rgb([redComp as u8, greenComp as u8, blueComp as u8]));                
         }
     }
 }
 
 
 
-pub fn addBGBitmapLayer(screen: &mut RgbImage, mem: &mut Mem) -> (){
+pub fn addBGBitmapLayer(screen: &mut RgbImage, mem: &mut Mem) {
     let mut bgControl = Register {
         value: mem.get_halfword(BG_CNTRL_ADDR[2]).little_endian(),
         address: BG_CNTRL_ADDR[2]
@@ -379,10 +396,10 @@ pub fn addBGBitmapLayer(screen: &mut RgbImage, mem: &mut Mem) -> (){
     for x in 0..240{
         for y in 0..160{
             let currentPixelColor = mem.get_halfword(TILE_DATA_ADDR + ((yOffset + y) * 160 + (xOffset + x)) * 2).little_endian(); 
-            let blueComp: u16 = (currentPixelColor / 2^10)  % (2^5);
-            let greenComp: u16 = (currentPixelColor / 2^5)  % (2^5); 
-            let redComp: u16 = (currentPixelColor)  % (2^5);
-            screen.put_pixel(x as u32, y as u32, Rgb([redComp as u8, greenComp as u8, blueComp as u8]));      
+            let blueComp: u16 = (currentPixelColor >> 10) & 0b11111;
+            let greenComp: u16 = (currentPixelColor >> 5) & 0b11111; 
+            let redComp: u16 = currentPixelColor & 0b11111;
+            screen.put_pixel(x as u32, y as u32, Rgb([redComp as u8, greenComp as u8, blueComp as u8]));                
 
         }
     }
@@ -432,8 +449,8 @@ pub fn getCurrentPixelColor(x: usize, y: usize, bgNum: usize, affine: bool, mem:
     let tileMapAddr: usize = TILE_DATA_ADDR + screenBase * 2048;   
     let currentTileAddr = tileMapAddr + 2 * currentTile;
     let currentTileData = mem.get_halfword(currentTileAddr).little_endian();
-    let horizontalFlipping = (currentTileData / 2^10) % 2;
-    let verticalFlipping = (currentTileData / 2^11) % 2;
+    let horizontalFlipping = (currentTileData >> 10) % 2;
+    let verticalFlipping = (currentTileData >> 11) % 2;
     if(affine){
         
     }
@@ -450,20 +467,19 @@ pub fn getCurrentPixelColor(x: usize, y: usize, bgNum: usize, affine: bool, mem:
     let mut currentPixelColor: u16 = 0;
     //256 color palette
     if(colorMode == 1){
-        currentPixelData = mem.get_byte(TILE_DATA_ADDR + charBase * 0x4000 + (currentTileData % (2^8)) as usize * 0x40 + currentPixelNum);
+        currentPixelData = mem.get_byte(TILE_DATA_ADDR + charBase * 0x4000 + (currentTileData & 0xff) as usize * 0x40 + currentPixelNum);
         currentPixelColor= mem.get_halfword(PRAM_START + (currentPixelData * 2) as usize).little_endian();
     }
     //16 color palette
     else{
-        currentPixelData = mem.get_byte(TILE_DATA_ADDR + charBase * 0x4000 + (currentTileData % (2^8)) as usize * 0x20 + currentPixelNum / 2);
+        currentPixelData = mem.get_byte(TILE_DATA_ADDR + charBase * 0x4000 + (currentTileData & 0xff) as usize * 0x20 + currentPixelNum / 2);
         if(currentPixelNum % 2 ==0){
-            currentPixelData = currentPixelData / 2^4;
+            currentPixelData >>= 4;
         }
         else{
-            currentPixelData = currentPixelData % (2^4);
+            currentPixelData &= 0b1111;
         }
-        currentPixelColor= mem.get_halfword(PRAM_START + ((currentTileData / 2^12) * 32) as usize + (currentPixelData * 2) as usize).little_endian();
+        currentPixelColor= mem.get_halfword(PRAM_START + ((currentTileData >> 12) * 32) as usize + (currentPixelData * 2) as usize).little_endian();
     }
-    return currentPixelColor;
-    
+    currentPixelColor
 }
