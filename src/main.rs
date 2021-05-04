@@ -5,11 +5,11 @@ pub mod graphics;
 use std::{env, thread::sleep};
 use std::fs::File;
 use std::time::{Duration, Instant};
-//use graphics::gpu::{draw};
+use graphics::gpu::{draw};
+use show_image::{ImageView, ImageInfo, create_window};
 use anyhow::Result;
 use arm::{cpu, mem};
 use audio::apu::make_a_sound;
-use graphics::gpu::draw;
 
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
@@ -21,19 +21,19 @@ fn main() -> Result<()> {
     println!("Starting simulation.");
     let mut cpu = cpu::Cpu::new();
     cpu.reset();
+    //cpu.toggle_debug();
+    let window = create_window("RBA", Default::default()).unwrap();
     cpu.toggle_debug();
     let two_clock_cycles = Duration::from_nanos(5);
     let gpu_cycle_start = Instant::now();
+    
     let mut cycles = 0;
     while cycles < 10_000_000 {
         if cpu.step(&mut ram).is_none() {
             break;
         }
         draw(&mut ram, cycles);
-        // if cycles == 200_000_000 {
-        //     cpu.toggle_debug();
-        // }
-        //sleep(two_clock_cycles);
+        //window.set_image("RBA", draw(&mut ram, cycles));
         cycles += 2;
     }
     println!("Saving state.");
