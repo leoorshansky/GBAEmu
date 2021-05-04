@@ -2,14 +2,14 @@ pub mod arm;
 pub mod audio;
 pub mod graphics;
 
-use std::env;
+use std::{env, thread::sleep};
 use std::fs::File;
 use std::time::{Duration, Instant};
 //use graphics::gpu::{draw};
 use anyhow::Result;
 use arm::{cpu, mem};
 use audio::apu::make_a_sound;
-
+use graphics::gpu::draw;
 
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
@@ -21,19 +21,34 @@ fn main() -> Result<()> {
     println!("Starting simulation.");
     let mut cpu = cpu::Cpu::new();
     cpu.reset();
-    //cpu.toggle_debug();
-    let mut elapsed = Duration::from_millis(0);
-    let gpuCycleStart = Instant::now();
-    let mut instructions = 0;
-    while instructions < 800_000 {
-        instructions += 1;
+    cpu.toggle_debug();
+    let two_clock_cycles = Duration::from_nanos(5);
+    let gpu_cycle_start = Instant::now();
+    let mut cycles = 0;
+    while cycles < 10_000_000 {
         if cpu.step(&mut ram).is_none() {
             break;
         }
-        elapsed += Instant::now().duration_since(gpuCycleStart);
-        //draw(&mut ram, elapsed);
+        draw(&mut ram, cycles);
+        // if cycles == 200_000_000 {
+        //     cpu.toggle_debug();
+        // }
+        //sleep(two_clock_cycles);
+        cycles += 2;
     }
+    println!("Saving state.");
+    let file = File::create("logs/wram_dump.hex").unwrap();
+    ram.save(0x3000000, 0x3007FFF, file).unwrap();
+    let file = File::create("logs/palette_dump.hex").unwrap();
+    ram.save(0x5000000, 0x50003FF, file).unwrap();
+    let file = File::create("logs/vram_dump.hex").unwrap();
+    ram.save(0x6000000, 0x6017FFF, file).unwrap();
+    let file = File::create("logs/oam_dump.hex").unwrap();
+    ram.save(0x7000000, 0x70003FF, file).unwrap();
+    let file = File::create("logs/graphics_dump.hex").unwrap();
+    ram.save(0x4000000, 0x70003FF, file).unwrap();
 
+    println!("Took {} ms", Instant::now().duration_since(gpu_cycle_start).as_millis());
     // For zlib test
     // let mut i = 40000;
     // loop {
@@ -45,6 +60,6 @@ fn main() -> Result<()> {
 
     // createDisplay();
     //make_a_sound();
-    println!("{}", instructions);
+    println!("{} cycles", cycles);
     Ok(())
 }
