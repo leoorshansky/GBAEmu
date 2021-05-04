@@ -1,18 +1,52 @@
 pub mod arm;
 pub mod audio;
 pub mod graphics;
+extern crate gio;
+
+use gtk::{Image, prelude::*};
+use gio::prelude::*;
 
 use std::env;
 use std::fs::File;
+use std::fs;
+use std::io::Read;
 use std::time::{Duration, Instant};
 use graphics::gpu::{draw};
 use show_image::{ImageView, ImageInfo, create_window};
 use anyhow::Result;
 use arm::{cpu, mem};
+use arm::mem::Mem;
+use arm::cpu::Cpu;
 use audio::apu::make_a_sound;
+use gtk::{Application, ApplicationWindow, Button};
 
 
 fn main() -> Result<()> {
+    let application = Application::new(
+        Some("com.github.gtk-rs.examples.basic"),
+        Default::default(),
+    ).expect("failed to initialize GTK application");
+
+    application.connect_activate(|app| {
+        let window = ApplicationWindow::new(app);
+        window.set_title("First GTK Program");
+        window.set_default_size(960, 640);
+        let mut cpu = Cpu::new();
+        let mut f = File::open("memdump.txt").expect("no file found");
+        let mut mem = Mem::new(235_000_000);
+        mem.load(0x0, f);
+        /*for x in 0x06000000..0x06017FFF{
+            print!("{}", memory[x]);
+        }*/
+    
+        let elapsed = Duration::from_nanos(69);
+        let image = Image::from_pixbuf(Some(&draw(&mut mem, &mut cpu, elapsed)));
+        window.add(&image);
+        window.show_all();
+    });
+
+    application.run(&[]);
+    /* 
     let args: Vec<String> = env::args().collect();
 
     let mut ram = mem::Mem::new(235_000_000);
@@ -25,7 +59,7 @@ fn main() -> Result<()> {
     //cpu.toggle_debug();
     let window = create_window("RBA", Default::default()).unwrap();
     
-    let mut elapsed = Duration::from_millis(0);
+    c
     let gpuCycleStart = Instant::now();
     let mut instructions = 0;
     while instructions < 800_000 {
@@ -49,5 +83,6 @@ fn main() -> Result<()> {
     // createDisplay();
     //make_a_sound();
     println!("{}", instructions);
+     */
     Ok(())
 }
