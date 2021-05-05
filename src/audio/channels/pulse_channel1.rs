@@ -1,7 +1,7 @@
-use crate::audio::pulse_wave::PulseWave;
+use crate::audio::waves::pulse_wave::PulseWave;
 use crate::mem::Mem;
 
-const SAMPLE_RATE: u128 = 48000;
+const SAMPLE_RATE: u128 = 16_000_000;
 const LENGTH_TICK_INTERVAL: u128 = SAMPLE_RATE / 256;
 const SWEEP_TICK_INTERVAL: u128 = SAMPLE_RATE / 128;
 const ENV_TICK_INTERVAL: u128 = SAMPLE_RATE / 64;
@@ -99,7 +99,7 @@ impl PulseChannel1 {
 
         // sound length checks
         if self.length_en && self.cycles % LENGTH_TICK_INTERVAL == 0 {
-            self.length_count -= 1; // todo: have to find out what to subtract; should be a function of how many times this function is called per second
+            self.length_count -= 1;
             if self.length_count <= 0 {
                 self.enabled = false;
             }
@@ -107,7 +107,6 @@ impl PulseChannel1 {
 
         // envelope calculations
         if self.env_time != 0 && self.cycles % ENV_TICK_INTERVAL == 0 {
-            // todo: see if we need to do smth with the modulo related to sample rate
             self.curr_vol += if self.env_inc { 1 } else { -1 };
             if self.curr_vol < 0 {
                 self.curr_vol = 0;
@@ -119,7 +118,6 @@ impl PulseChannel1 {
 
         // sweep calculations
         if self.sweep_shift != 0 && self.sweep_time != 0 && self.cycles % SWEEP_TICK_INTERVAL == 0 {
-            // todo: see if we need to do smth with the modulo related to sample rate
             let new_rate = self.curr_rate
                 + (if self.sweep_inc { 1 } else { -1 })
                     * (self.curr_rate / (1 << self.sweep_shift));
