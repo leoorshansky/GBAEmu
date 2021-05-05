@@ -80,47 +80,31 @@ impl Cpu {
         let state = self.get_state();
         let mode = self.get_mode();
 
-        // if self.regs[15] == 0x1778 {
-        //     let mut file = File::create("logs/wram_dump.hex").unwrap();
-        //     for address in 0x3000000..=0x3007FFF {
-        //         let buf = [ram.get_byte(address)];
-        //         file.write_all(&buf).unwrap();
-        //     }
-        //     let mut file = File::create("logs/palette_dump.hex").unwrap();
-        //     for address in 0x5000000..=0x50003FF {
-        //         let buf = [ram.get_byte(address)];
-        //         file.write_all(&buf).unwrap();
-        //     }
-        //     let mut file = File::create("logs/vram_dump.hex").unwrap();
-        //     for address in 0x6000000..=0x6017FFF {
-        //         let buf = [ram.get_byte(address)];
-        //         file.write_all(&buf).unwrap();
-        //     }
-        //     let mut file = File::create("logs/oam_dump.hex").unwrap();
-        //     for address in 0x7000000..=0x70003FF {
-        //         let buf = [ram.get_byte(address)];
-        //         file.write_all(&buf).unwrap();
-        //     }
-        //     return None;
-        // }
-
         let instruction = self.execute_stage;
         self.execute_stage = self.decode_stage;
         self.decode_stage = ram.get_word(self.regs[15] as usize).little_endian();
 
-        let pc = self.regs[15] - if let State::Arm = state { 8 } else { 4 };
+        let pc = if self.regs[15] >= 8 {self.regs[15] - if let State::Arm = state { 8 } else { 4 }} else { 0 };
+
+        self.irq_input = ram.get_byte(0x4000202) != 0 && ram.get_byte(0x4000208) & 1 == 1;
 
         if self.fiq_input && !self.get_status_bit(BIT_F) || self.irq_input && !self.get_status_bit(BIT_I) {
             let mode = if self.fiq_input { Mode::Fiq } else { Mode::Irq };
             self.regs[self.get_register_index(mode, 14)] = pc + 4;
             self.regs[self.get_psr_index(mode)] = self.regs[REG_CPSR];
             self.set_mode(mode);
+            self.set_state(State::Arm);
             self.decode_stage = NOP;
             self.execute_stage = NOP;
             self.regs[15] = if self.fiq_input { 0x1C } else { 0x18 };
             self.set_status_bit(BIT_I, true);
             if self.fiq_input {
                 self.set_status_bit(BIT_F, true);
+                if self.debug {
+                    println!("FIQ triggered");
+                }
+            } else if self.debug {
+                println!("IRQ triggered");
             }
             return Some(());
         }
@@ -365,7 +349,7 @@ impl Cpu {
                         } & 0xffff) as u16;
                         ram.set_halfword(memory_address as usize, HalfWord::from_u16_le(data));
                     }
-                    if write_back {
+                    if write_back || !pre_index {
                         self.regs[rn_index] = offset_address;
                     }
                 } else if opcode >> 2 == 2 && instruction >> 4 & 0b1111 == 0b1001 {
@@ -564,10 +548,10 @@ impl Cpu {
                     self.execute_stage = NOP;
                 } else if opcode >> 5 == 1 {
                     // Load/Store
-                    let write_back = instruction >> 21 & 1 == 1;
                     let byte_quantity = instruction >> 22 & 1 == 1;
                     let up = instruction >> 23 & 1 == 1;
                     let pre_index = instruction >> 24 & 1 == 1;
+                    let write_back = instruction >> 21 & 1 == 1;
 
                     let offset = if !immediate {
                         instruction & 0xfff
@@ -675,7 +659,7 @@ impl Cpu {
                             self.regs[15] -= 8;
                         }
                     }
-                    if write_back {
+                    if write_back || !pre_index {
                         self.regs[rn_index] = offset_address;
                     }
                 } else if opcode >> 4 == 4 {
@@ -1189,7 +1173,10 @@ impl Cpu {
             } else if opcode >> 2 == 3 {
                 // Load/Store with immediate offset
                 let byte = instruction >> 12 & 1 == 1;
-                let offset = (instruction >> 6 & 0b11111) << 2;
+                let mut offset = instruction >> 6 & 0b11111;
+                if !byte {
+                    offset <<= 2;
+                }
                 let memory_address = rs.wrapping_add(offset);
                 if instruction >> 11 & 1 == 1 {
                     // Load
@@ -1215,16 +1202,17 @@ impl Cpu {
             } else if opcode >> 1 == 8 {
                 // Load/store halfword
                 let offset = (instruction >> 6 & 0b11111) << 1;
+                let memory_address = rs.wrapping_add(offset);
                 if instruction >> 11 & 1 == 1 {
                     // Load
                     debug_string = "LDRH";
                     self.regs[rd_index] =
-                        ram.get_halfword((rs + offset) as usize).little_endian() as u32;
+                        ram.get_halfword(memory_address as usize).little_endian() as u32;
                 } else {
                     // Store
                     debug_string = "STRH";
                     ram.set_halfword(
-                        (rs + offset) as usize,
+                        memory_address as usize,
                         HalfWord::from_u16_le((rd & 0xffff) as u16),
                     );
                 }
@@ -1450,10 +1438,6 @@ impl Cpu {
 
     pub fn toggle_debug(&mut self) {
         self.debug = !self.debug;
-    }
-
-    pub fn irq(&mut self) {
-        self.irq_input = true;
     }
 
     pub fn fiq(&mut self) {
