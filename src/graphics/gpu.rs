@@ -197,12 +197,13 @@ pub fn draw(mem: &mut Mem, cycle: usize) -> Option<Pixbuf> {
     }
     
     let mut screen = Pixbuf::new(Colorspace::Rgb, false, 8, 960, 640).unwrap();
+    screen.fill(0xFFFFFF00);
     //let mut screen: [u8; 1843200] = [0; 1843200];
     //let mut screen: [u8; 115200] = [0; 115200];
 
 
     //display mode 1
-    if(/*control.getBits(VideoMode_START_BIT as u16, 2) == 1*/ 1 == 1){
+    if(true){
         let mut prioritySprites: Vec<Vec<usize>> = Vec::new();
         for i in 0..4{
             prioritySprites.push(Vec::new());
@@ -230,7 +231,9 @@ pub fn draw(mem: &mut Mem, cycle: usize) -> Option<Pixbuf> {
 
         for i in 0..4{
             if(priorities[4-i-1] != 5){
-                addBGTileLayer(priorities[(4 - i - 1) as usize], &mut screen, mem);
+                if(control.getBits(VideoMode_START_BIT as u16, 2, mem) == 0 || control.getBits(VideoMode_START_BIT as u16, 2, mem) == 1){
+                    addBGTileLayer(priorities[(4 - i - 1) as usize], &mut screen, mem);
+                }
             }
             for sprite in prioritySprites[(4 - i - 1)as usize].iter().rev() {
                 let x = *sprite;
@@ -238,7 +241,9 @@ pub fn draw(mem: &mut Mem, cycle: usize) -> Option<Pixbuf> {
                     value: mem.get_halfword(REG_DISPCNT_ADDR).little_endian(),
                     address: REG_DISPCNT_ADDR,
                 };
-                drawTiledSprite(x, &mut screen, mem, controlCopy);
+                if(x != 9){
+                    drawTiledSprite(x, &mut screen, mem, controlCopy);
+                }
             }
         }
     }
