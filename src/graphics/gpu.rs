@@ -4,7 +4,7 @@
 #![allow(unused_mut)]
 #![allow(unused_parens)]
 #![allow(unused_variables)]
-use std::{u16, u8, usize};
+use std::{fs::File, io::Write, thread, u16, u8, usize};
 use gdk_pixbuf::{Pixbuf, Colorspace};
 use image::{RgbImage, Rgb};
 use sdl2::{image::LoadTexture, render::Canvas, surface::Surface, video::Window};
@@ -179,7 +179,7 @@ pub fn draw(mem: &mut Mem, cycle: usize, canvas: &mut Canvas<Window>) {
         }
         status.setBit(1, HBlank_BIT, mem);
     }
-    else{
+    else {
         status.setBit(0, HBlank_BIT, mem);
     }
     if(cycle_within_frame > V_BLANK_CYCLES){
@@ -188,10 +188,10 @@ pub fn draw(mem: &mut Mem, cycle: usize, canvas: &mut Canvas<Window>) {
         }
         status.setBit(1, VBlank_BIT, mem);
     }
-    else{
+    else {
         status.setBit(0, VBlank_BIT, mem);
     }
-    if !(V_BLANK_CYCLES - 100..=V_BLANK_CYCLES).contains(&cycle_within_frame) {
+    if !((V_BLANK_CYCLES - 100)..=V_BLANK_CYCLES).contains(&cycle_within_frame) {
         return;
     }
     
@@ -250,7 +250,8 @@ pub fn draw(mem: &mut Mem, cycle: usize, canvas: &mut Canvas<Window>) {
     //let v = Pixbuf::from_mut_slice(&mut screen, Colorspace::Rgb, false, 8, 240, 160, 720);
     let tex_creator = canvas.texture_creator();
     let l = unsafe { screen.get_pixels() };
-    let surf = Surface::from_data(l, 960, 640, 960 * 3, sdl2::pixels::PixelFormatEnum::RGB24).unwrap();
+    File::create("pixbuf.hex").unwrap().write_all(l).unwrap();
+    let surf = Surface::from_data(l, 960, 640, screen.get_rowstride() as u32, sdl2::pixels::PixelFormatEnum::RGB24).unwrap();
     canvas.copy(&surf.as_texture(&tex_creator).unwrap(), None, None).unwrap();
     canvas.present();
 }
