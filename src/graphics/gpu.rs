@@ -198,7 +198,7 @@ pub fn draw(mem: &mut Mem, cpu: &mut Cpu, elapsed: Duration) -> (Pixbuf) {
             let attr0 = mem.get_halfword(OAM_START + 8 * x +  0 * 2).little_endian();
             let attr2 = mem.get_halfword(OAM_START + 8 * x +  2 * 2).little_endian();
             
-            if((attr0 >> 7) & 0b11 != 2){
+            if((attr0 >> 8) & 0b11 != 2){
                 let priority = (attr2 >> 10) & 0b11;
                 prioritySprites[priority as usize].push(x);
             }
@@ -219,7 +219,7 @@ pub fn draw(mem: &mut Mem, cpu: &mut Cpu, elapsed: Duration) -> (Pixbuf) {
             if(priorities[4-i-1] != 5){
                 addBGTileLayer(priorities[(4 - i - 1) as usize], &mut screen, mem);
             }
-            for sprite in prioritySprites[(4 - i - 1)as usize].iter() {
+            for sprite in prioritySprites[(4 - i - 1)as usize].iter().rev() {
                 let x = *sprite;
                 let controlCopy = Register {
                     value: mem.get_halfword(REG_DISPCNT_ADDR).little_endian(),
@@ -278,8 +278,9 @@ pub fn drawTiledSprite(spriteNum: usize, screen: &mut Pixbuf, mem: &mut Mem, con
     let attr2 = mem.get_halfword(OAM_START + 8 * spriteNum + 2 * 2).little_endian();
     let attr3 = mem.get_halfword(OAM_START + 8 * spriteNum + 3 * 2).little_endian();
     let sizeMode = attr0 >> 14;
-    let baseTile = attr2 & 0b11111_1111;
-    let colorMode = (attr0 >> 13) & 0b11;
+    let doubleSize = attr0 >> 8 & 0b11 == 3;
+    let baseTile = attr2 & 0b11111_11111;
+    let colorMode = (attr0 >> 13) & 0b1;
     let tileIndexingMode = if control.getBit(ObjectMappingMode_BIT as u16) == 1 { 0 } else { 1 };
     let mut xCoord = attr1 & 0b11111_1111;
     let yCoord = attr0 & 0b1111_1111;
@@ -348,27 +349,58 @@ pub fn drawTiledSprite(spriteNum: usize, screen: &mut Pixbuf, mem: &mut Mem, con
     }
     let mut lastX = xCoord + xDim;
     let mut lastY = yCoord + yDim;
-    if(xCoord + xDim > 240){
-        lastX = 240;
+
+    if doubleSize {
+        lastX += xDim;
+        lastY += yDim;
     }
-    if(yCoord + yDim > 160){
-        lastY = 160;
-    }
-    if xCoord > 240 || yCoord > 160 {
-        return;
-    }  
-    for x in xCoord..lastX{
-        for y in yCoord..lastY{
-            let tileX = x - xCoord;
-            let tileY = y - yCoord;
-            let currentTile = (tileY / 8) * (xDim / 8) + (tileX/8);
+    
+    // if(xCoord + xDim > 240){
+    //     lastX = 240;
+    // }
+    // if(yCoord + yDim > 160){
+    //     lastY = 160;
+    // }
+    // if xCoord > 240 || yCoord > 160 {
+    //     return;
+    // }
+    for mut x in xCoord..lastX{
+        for mut y in yCoord..lastY{
+
+            let mut spriteX = x - xCoord;
+            let mut spriteY = y - yCoord;
+
+            if((attr0 >> 8) & 0b11 == 1 || (attr0 >> 8) & 0b11 == 3){
+
+                let centeredX = spriteX as i16 - xDim as i16;
+                let centeredY = spriteY as i16 - yDim as i16;
+
+                let affineIndex = (attr1 >> 9) & 0b11111;
+                let pA = mem.get_halfword(OAM_START + (0x20 * affineIndex) as usize + 0x6).little_endian();
+                let pA = if pA >> 15 == 1 { -1. } else { 1. } * (pA as f32 / 256f32);
+                let pB = mem.get_halfword(OAM_START + (0x20 * affineIndex) as usize + 0xE).little_endian();
+                let pB = if pB >> 15 == 1 { -1. } else { 1. } * (pB as f32 / 256f32);
+                let pC = mem.get_halfword(OAM_START + (0x20 * affineIndex) as usize + 0x16).little_endian();
+                let pC = if pC >> 15 == 1 { -1. } else { 1. } * (pC as f32 / 256f32);
+                let pD = mem.get_halfword(OAM_START + (0x20 * affineIndex) as usize + 0x1E).little_endian();
+                let pD = if pD >> 15 == 1 { -1. } else { 1. } * (pD as f32 / 256f32);
+                
+                spriteX = ((xDim / 2) as i16 + (pA * centeredX as f32) as i16 + (pB * centeredY as f32) as i16) as u16;
+                spriteY = ((yDim / 2) as i16 + (pC * centeredX as f32) as i16 + (pD * centeredY as f32) as i16) as u16;
+            }
+
+            if (spriteX as i16) < 0 || (spriteY as i16) < 0 || spriteX > xDim || spriteY > yDim {
+                continue;
+            }
+            
+            let currentTile = (spriteY / 8) * (xDim / 8) + (spriteX/8);
             let mut currentTileWithinMemory = 0;
             if(tileIndexingMode == 1){
                 if(colorMode == 1){
-                    currentTileWithinMemory = baseTile + (tileY / 8) * 32 + (tileX / 8) * 2;
+                    currentTileWithinMemory = baseTile + (spriteY / 8) * 32 + (spriteX / 8) * 2;
                 }
                 else{
-                    currentTileWithinMemory = baseTile + (tileY/8) * 32 + (tileX / 8);
+                    currentTileWithinMemory = baseTile + (spriteY/8) * 32 + (spriteX / 8);
                 }
             }
             else if(tileIndexingMode == 0){
@@ -381,8 +413,8 @@ pub fn drawTiledSprite(spriteNum: usize, screen: &mut Pixbuf, mem: &mut Mem, con
     
             }
             
-            let xWithinTile = tileX % 8;
-            let yWithinTile = tileY % 8;
+            let xWithinTile = spriteX % 8;
+            let yWithinTile = spriteY % 8;
             let mut currentPixelData = 0;
             let mut currentPixelColor = 0;
             let currentPixelNum = yWithinTile * 8 + xWithinTile;
@@ -420,14 +452,17 @@ pub fn drawTiledSprite(spriteNum: usize, screen: &mut Pixbuf, mem: &mut Mem, con
             if(currentPixelData == 0){
                 continue;
             }
-            for x1 in 0..4{
-                for y1 in 0..4{
-                    // screen[((960*(4*y+y1)  + (4*x+x1)) * 3) as usize] = (redComp as u8) << 3;
-                    // screen[((960*(4*y+y1)  + (4*x+x1)) * 3 + 1) as usize] = (greenComp as u8) << 3;
-                    // screen[((960*(4*y+y1)  + (4*x+x1)) * 3 + 2) as usize] = (blueComp as u8) << 3;
-                    if(redComp != 0 || greenComp != 0 || blueComp != 0){
-                        screen.put_pixel((4*x + x1) as u32, (4 * y + y1) as u32, (redComp as u8) << 3 , (greenComp as u8) << 3, (blueComp as u8) << 3, 1);
-                    }                
+            if redComp != 0 || greenComp != 0 || blueComp != 0 {
+                for x1 in 0..4{
+                    for y1 in 0..4{
+                        // screen[((960*(4*y+y1)  + (4*x+x1)) * 3) as usize] = (redComp as u8) << 3;
+                        // screen[((960*(4*y+y1)  + (4*x+x1)) * 3 + 1) as usize] = (greenComp as u8) << 3;
+                        // screen[((960*(4*y+y1)  + (4*x+x1)) * 3 + 2) as usize] = (blueComp as u8) << 3;
+                        y = y % 256;
+                        if(x < 240 && y < 160){
+                            screen.put_pixel((4*x + x1) as u32, (4 * y + y1) as u32, (redComp as u8) << 3 , (greenComp as u8) << 3, (blueComp as u8) << 3, 1);                            
+                        }                   
+                    }
                 }
             }
                          
