@@ -10,7 +10,7 @@ use image::{RgbImage, Rgb};
 use std::time::{Duration, Instant};
 use std::fmt;
 
-use crate::arm::{cpu::Cpu, mem::Mem};
+use crate::arm::{cpu::{Cpu}, mem::{Mem, Interrupt}};
 use crate::arm::common::{HalfWord};
 
 const PRAM_START: usize = 0x05000000;
@@ -69,6 +69,10 @@ const CYCLE_TIME: usize = 16666666;
 const V_BLANK_TIME: usize = 11695906;
 const SCANLINE_TIME: usize = 73099;
 const H_BLANK_TIME: usize = 56960;
+const FRAME_CYCLES: usize = 280_896;
+const SCANLINE_CYCLES: usize = 1232;
+const H_BLANK_CYCLES: usize = 1004;
+const V_BLANK_CYCLES: usize = 197_120;
 //Tile Data Information
 const TILE_DATA_ADDR:usize = 0x06000000;
 //Sprite Tile Data/PRAM information
@@ -108,13 +112,16 @@ pub struct Register {
 
 
 impl Register{
-    fn getValue(&self) -> u16{
-       self.value
+    fn getValue(&mut self, mem: &Mem) -> u16{
+        self.value = mem.get_halfword(self.address).little_endian();
+        self.value
     }
-    fn getBit(&self, n: u16) -> u16{
+    fn getBit(&mut self, n: u16, mem: &Mem) -> u16{
+        self.value = mem.get_halfword(self.address).little_endian();
         self.value >> n & 1
     }
-    fn getBits(&self, start: u16, num_bits: u16) -> u16 {
+    fn getBits(&mut self, start: u16, num_bits: u16, mem: &Mem) -> u16 {
+        self.value = mem.get_halfword(self.address).little_endian();
         (self.value >> start) % (1 << num_bits)
     }
     fn setValue(&mut self, v: u16, mem: &mut Mem) {
@@ -139,8 +146,7 @@ impl Register{
 }
 
 
-pub fn draw(mem: &mut Mem, cpu: &mut Cpu, elapsed: Duration) -> (Pixbuf) {
-    let mut start = Instant::now();
+pub fn draw(mem: &mut Mem, cycle: usize) -> Option<Pixbuf> {
     //initializing video registers
     let mut control = Register {
         value: mem.get_halfword(REG_DISPCNT_ADDR).little_endian(),
@@ -155,34 +161,41 @@ pub fn draw(mem: &mut Mem, cpu: &mut Cpu, elapsed: Duration) -> (Pixbuf) {
         address: REG_VCOUNT_ADDR,
     };
     //setting up timing
-    // let mut currentCycle = elapsed.as_nanos() % CYCLE_TIME as u128;
-    // vCounter.setValue(((currentCycle / CYCLE_TIME as u128) * 227 )as u16, mem);
-    // if(vCounter.getValue() == status.getBits(VCountTriggerValue_START_BIT as u16, 7)){
-    //     if(status.getBit(VCountInterruptRequest_BIT as u16) == 1){
-    //         cpu.irq();
-    //     }
-    //     status.setBit(1, VCountTrigger_BIT, mem);
-    // }
-    // if(currentCycle > V_BLANK_TIME as u128){
-    //     if(status.getBit(VBlankInterruptRequest_BIT as u16) == 1){
-    //         cpu.irq();
-    //     }
-    //     status.setBit(1, VBlank_BIT, mem);
-    //     return Pixbuf::new(Colorspace::Rgb, false, 15, 240, 160).unwrap();
-    // }
-    // else{
-    //     status.setBit(0, VBlank_BIT, mem);
-    // }
-    // let mut currentScanline = elapsed.as_nanos() % SCANLINE_TIME as u128;
-    // if(currentScanline > H_BLANK_TIME as u128){
-    //     if(status.getBit(HBlankInterruptRequest_BIT as u16) == 1){
-    //         cpu.irq();
-    //     }
-    //     status.setBit(1, HBlank_BIT, mem);
-    // }
-    // else{
-    //     status.setBit(0, HBlank_BIT, mem);
-    // }
+    let oldvCounter = mem.get_byte(0x4000006);
+    let currentLine = (((cycle % FRAME_CYCLES) as f64 / FRAME_CYCLES as f64) * 228f64 ) as u16;
+    vCounter.setValue(currentLine, mem);
+    //if currentLine != oldvCounter as u16 { println!("VCOUNTER IS {}", mem.get_byte(0x4000006)) };
+    if(vCounter.getValue(mem) == status.getBits(VCountTriggerValue_START_BIT as u16, 8, mem)){
+        if(status.getBit(VCountInterruptRequest_BIT as u16, mem) == 1){
+            mem.request_irq(Interrupt::VCounter);
+        }
+        status.setBit(1, VCountTrigger_BIT, mem);
+    }
+    let mut blanking = false;
+    if(cycle % SCANLINE_CYCLES > H_BLANK_CYCLES){
+        blanking = true;
+        if(status.getBit(HBlankInterruptRequest_BIT as u16, mem) == 1 && status.getBit(HBlank_BIT as u16, mem) == 0){
+            mem.request_irq(Interrupt::HBlank);
+        }
+        status.setBit(1, HBlank_BIT, mem);
+    }
+    else{
+        status.setBit(0, HBlank_BIT, mem);
+    }
+    if(cycle % FRAME_CYCLES > V_BLANK_CYCLES){
+        blanking = true;
+        if(status.getBit(VBlankInterruptRequest_BIT as u16, mem) == 1 && status.getBit(VBlank_BIT as u16, mem) == 0){
+            mem.request_irq(Interrupt::VBlank);
+        }
+        status.setBit(1, VBlank_BIT, mem);
+    }
+    else{
+        status.setBit(0, VBlank_BIT, mem);
+    }
+    if blanking {
+        return None;
+    }
+    
     let mut screen = Pixbuf::new(Colorspace::Rgb, false, 8, 960, 640).unwrap();
     //let mut screen: [u8; 1843200] = [0; 1843200];
     //let mut screen: [u8; 115200] = [0; 115200];
@@ -209,8 +222,8 @@ pub fn draw(mem: &mut Mem, cpu: &mut Cpu, elapsed: Duration) -> (Pixbuf) {
                 value: mem.get_halfword(BG_CNTRL_ADDR[x]).little_endian(),
                 address: BG_CNTRL_ADDR[x]
             };
-            let layer: u16 = bgControl.getBits(BG_PRIORITY_START_BIT as u16, 2);
-            if(control.getBit((BG0Display_BIT + x as u8) as u16) == 1){
+            let layer: u16 = bgControl.getBits(BG_PRIORITY_START_BIT as u16, 2, &mem);
+            if(control.getBit((BG0Display_BIT + x as u8) as u16, &mem) == 1){
                 priorities[layer as usize] = x;
             }
         }
@@ -228,8 +241,6 @@ pub fn draw(mem: &mut Mem, cpu: &mut Cpu, elapsed: Duration) -> (Pixbuf) {
                 drawTiledSprite(x, &mut screen, mem, controlCopy);
             }
         }
-        let end = Instant::now().duration_since(start);
-        print!("time is {} \n", end.as_millis());
     }
     
     // if(control.getBits(VideoMode_START_BIT as u16, 2) == 3){
@@ -238,9 +249,7 @@ pub fn draw(mem: &mut Mem, cpu: &mut Cpu, elapsed: Duration) -> (Pixbuf) {
     //     }
     // }
     //let v = Pixbuf::from_mut_slice(&mut screen, Colorspace::Rgb, false, 8, 240, 160, 720);
-    return screen;
-
-
+    return Some(screen);
 }
 
 
@@ -271,7 +280,7 @@ pub fn addBGTileLayer(bgNum: usize, screen: &mut Pixbuf, mem: &mut Mem) {
     
 }
 
-pub fn drawTiledSprite(spriteNum: usize, screen: &mut Pixbuf, mem: &mut Mem, control: Register) {
+pub fn drawTiledSprite(spriteNum: usize, screen: &mut Pixbuf, mem: &mut Mem, mut control: Register) {
     
     let attr0 = mem.get_halfword(OAM_START + 8 * spriteNum + 0 * 2).little_endian();
     let attr1 = mem.get_halfword(OAM_START + 8 * spriteNum + 1 * 2).little_endian();
@@ -281,7 +290,7 @@ pub fn drawTiledSprite(spriteNum: usize, screen: &mut Pixbuf, mem: &mut Mem, con
     let doubleSize = attr0 >> 8 & 0b11 == 3;
     let baseTile = attr2 & 0b11111_11111;
     let colorMode = (attr0 >> 13) & 0b1;
-    let tileIndexingMode = if control.getBit(ObjectMappingMode_BIT as u16) == 1 { 0 } else { 1 };
+    let tileIndexingMode = if control.getBit(ObjectMappingMode_BIT as u16, mem) == 1 { 0 } else { 1 };
     let mut xCoord = attr1 & 0b11111_1111;
     let yCoord = attr0 & 0b1111_1111;
     let horizontalFlip = (attr1 >> 12) & 0b1;
@@ -513,10 +522,10 @@ pub fn getCurrentPixelColor(x: usize, y: usize, bgNum: usize, affine: bool, mem:
     };
     let xOffset: usize = mem.get_halfword(BG_HORIZONTAL_OFFSET_ADDR[bgNum]).little_endian() as usize;
     let yOffset: usize = mem.get_halfword(BG_VERTICAL_OFFSET_ADDR[bgNum]).little_endian() as usize;
-    let charBase: usize = bgControl.getBits(2, 2) as usize;
-    let screenBase: usize = bgControl.getBits(8, 5) as usize;
-    let sizeMode: usize = bgControl.getBits(14,2) as usize;
-    let colorMode: usize = bgControl.getBit(PALETTES_BIT as u16) as usize;
+    let charBase: usize = bgControl.getBits(2, 2, mem) as usize;
+    let screenBase: usize = bgControl.getBits(8, 5, mem) as usize;
+    let sizeMode: usize = bgControl.getBits(14,2, mem) as usize;
+    let colorMode: usize = bgControl.getBit(PALETTES_BIT as u16, mem) as usize;
     let startTile = (yOffset/8) * 32 + (xOffset/8);
 
     let mut currentTile: usize = 0;

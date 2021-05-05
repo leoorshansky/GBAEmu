@@ -3,74 +3,74 @@ pub mod audio;
 pub mod graphics;
 extern crate gio;
 
-use gtk::{Image, prelude::*};
+use rodio::OutputStream;
 use gio::prelude::*;
 
-use std::env;
+use std::{env, thread::sleep};
 use std::fs::File;
 use std::fs;
 use std::io::Read;
 use std::time::{Duration, Instant};
 use graphics::gpu::{draw};
-use show_image::{ImageView, ImageInfo, create_window};
 use anyhow::Result;
 use arm::{cpu, mem};
-use arm::mem::Mem;
 use arm::cpu::Cpu;
-use audio::apu::make_a_sound;
-use gtk::{Application, ApplicationWindow, Button};
-
+use audio::apu::APU;
 
 fn main() -> Result<()> {
-    let application = Application::new(
-        Some("com.github.gtk-rs.examples.basic"),
-        Default::default(),
-    ).expect("failed to initialize GTK application");
-
-    application.connect_activate(|app| {
-        let window = ApplicationWindow::new(app);
-        window.set_title("First GTK Program");
-        window.set_default_size(960, 640);
-        let mut cpu = Cpu::new();
-        let mut f = File::open("memdump.txt").expect("no file found");
-        let mut mem = Mem::new(235_000_000);
-        mem.load(0x0, f);
-        /*for x in 0x06000000..0x06017FFF{
-            print!("{}", memory[x]);
-        }*/
-    
-        let elapsed = Duration::from_nanos(69);
-        let image = Image::from_pixbuf(Some(&draw(&mut mem, &mut cpu, elapsed)));
-        window.add(&image);
-        window.show_all();
-    });
-
-    application.run(&[]);
-    /* 
     let args: Vec<String> = env::args().collect();
 
+    //let mut f = File::open("memdump.txt").expect("no file found");
+
+    let sdl_context = sdl2::init().unwrap();
+    let video_subsystem = sdl_context.video().unwrap();
+
+    let window = video_subsystem.window("rust-sdl2 demo", 960, 640)
+        .position_centered()
+        .build()
+        .unwrap();
+
+    let mut cpu = Cpu::new();
     let mut ram = mem::Mem::new(235_000_000);
     println!("Loading memory...");
-    ram.load(0, File::open(&args[1])?)?;
-    ram.load(0x8000000, File::open(&args[2])?)?;
+    ram.load(0, File::open(&args[1]).unwrap()).unwrap();
+    ram.load(0x8000000, File::open(&args[2]).unwrap()).unwrap();
+    /*for x in 0x06000000..0x06017FFF{
+        print!("{}", memory[x]);
+    }*/
     println!("Starting simulation.");
-    let mut cpu = cpu::Cpu::new();
     cpu.reset();
     //cpu.toggle_debug();
-    let window = create_window("RBA", Default::default()).unwrap();
-    
-    c
-    let gpuCycleStart = Instant::now();
-    let mut instructions = 0;
-    while instructions < 800_000 {
-        instructions += 1;
+    let two_clock_cycles = Duration::from_nanos(5);
+    let gpu_cycle_start = Instant::now();
+    let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+    let mut apu = APU::new(&stream_handle);
+    let mut cycles = 0;
+    while cycles < 100_000_000 {
         if cpu.step(&mut ram).is_none() {
             break;
         }
-        elapsed = Instant::now().duration_since(gpuCycleStart);
-        window.set_image("RBA", draw(&mut ram, & mut cpu, elapsed));
+        if cycles % 5 == 0 {
+            draw(&mut ram, cycles);
+        }
+        apu.step(&ram);
+        cycles += 2;
     }
+    println!("Took {} ms", Instant::now().duration_since(gpu_cycle_start).as_millis());
+    println!("Ran {} cycles", cycles);
 
+    println!("Saving state.");
+    let file = File::create("logs/wram_dump.hex").unwrap();
+    ram.save(0x3000000, 0x3007FFF, file).unwrap();
+    let file = File::create("logs/palette_dump.hex").unwrap();
+    ram.save(0x5000000, 0x50003FF, file).unwrap();
+    let file = File::create("logs/vram_dump.hex").unwrap();
+    ram.save(0x6000000, 0x6017FFF, file).unwrap();
+    let file = File::create("logs/oam_dump.hex").unwrap();
+    ram.save(0x7000000, 0x70003FF, file).unwrap();
+    let file = File::create("logs/graphics_dump.hex").unwrap();
+    ram.save(0x4000000, 0x70003FF, file).unwrap();
+    
     // For zlib test
     // let mut i = 40000;
     // loop {
@@ -82,7 +82,5 @@ fn main() -> Result<()> {
 
     // createDisplay();
     //make_a_sound();
-    println!("{}", instructions);
-     */
     Ok(())
 }

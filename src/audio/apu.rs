@@ -1,53 +1,137 @@
-use crate::audio::pulse_wave::PulseWave;
-use rodio::source::Amplify;
+use crate::audio::channels::pulse_channel1::PulseChannel1;
+use crate::audio::channels::pulse_channel2::PulseChannel2;
+use crate::audio::channels::wave_channel::WaveChannel;
+use crate::mem::Mem;
+use rodio::source::Source;
+use rodio::OutputStreamHandle;
+use rodio::Sink;
 use std::time::Duration;
-use rodio::{OutputStream, Sink};
-use rodio::source::{SineWave, Source};
-use std::f32::consts::PI;
 
-const SOUND_OFFSET: u64 = 0x40000000;
-const REG_SND1SWEEP: u64 = SOUND_OFFSET + 0x60;
-const REG_SND1CTR: u64 = SOUND_OFFSET + 0x62;
-const REG_SND1FREQ: u64 = SOUND_OFFSET + 0x64;
-const REG_SND2CTR: u64 = SOUND_OFFSET + 0x68;
-const REG_SND2FREQ: u64 = SOUND_OFFSET + 0x6c;
-const REG_SND3SEL: u64 = SOUND_OFFSET + 0x70;
-const REG_SND3CNT: u64 = SOUND_OFFSET + 0x72;
-const REG_SND3FREQ: u64 = SOUND_OFFSET + 0x74;
-const REG_SND4CNT: u64 = SOUND_OFFSET + 0x78;
-const REG_SND4FREQ: u64 = SOUND_OFFSET + 0x7c;
-const REG_SNDDMGCNT: u64 = SOUND_OFFSET + 0x80;
-const REG_SNDDSCNT: u64 = SOUND_OFFSET + 0x82;
-const REG_SNDSTAT: u64 = SOUND_OFFSET + 0x84;
-const REG_SNDBIAS: u64 = SOUND_OFFSET + 0x88;
+const SOUND_OFFSET: usize = 0x40000000;
+const REG_SND4CNT: usize = SOUND_OFFSET + 0x78;
+const REG_SND4FREQ: usize = SOUND_OFFSET + 0x7c;
+const REG_SNDDMGCNT: usize = SOUND_OFFSET + 0x80;
+const REG_SNDDSCNT: usize = SOUND_OFFSET + 0x82;
+const REG_SNDSTAT: usize = SOUND_OFFSET + 0x84;
+const REG_SNDBIAS: usize = SOUND_OFFSET + 0x88;
 
-
-// todo: sweep stuff, envelope stuff, channel 3 sample reading, channel 4 noise generation
-// todo: direct sound stuff
-fn play_pulse_wave(duration: Duration, amplitude: f32, duty_cycle: f32, frequency: u32) {
-    let (_stream, stream_handle) = OutputStream::try_default().unwrap();
-    let sink = Sink::try_new(&stream_handle).unwrap();
-
-    sink.append(PulseWave::new(frequency as f32, duty_cycle).amplify(amplitude).take_duration(duration));
-
-    // sink.detach();
-    sink.sleep_until_end();
+struct Controls {
+    enable: bool,
+    l_vol: u8,
+    r_vol: u8,
+    l_c1_en: bool,
+    l_c2_en: bool,
+    l_c3_en: bool,
+    l_c4_en: bool,
+    r_c1_en: bool,
+    r_c2_en: bool,
+    r_c3_en: bool,
+    r_c4_en: bool,
+    dmg_vol: u8,
 }
 
-fn freq_from_rate(rate: u16) -> u32 {
-    (1 << 17) / (2048 - rate) as u32
+pub struct APU<'a> {
+    cycles: u128,
+    handle: &'a OutputStreamHandle,
+    c1: Sink,
+    c2: Sink,
+    c3: Sink,
+    c4: Sink,
+    da: Sink,
+    db: Sink,
+    p1: PulseChannel1,
+    p2: PulseChannel2,
+    p3: WaveChannel,
+    controls: Controls,
 }
 
-pub fn make_a_sound() {
-    // play_pulse_wave(Duration::from_secs_f32(0.5), 1.0, 0.5, 440);
-    // play_pulse_wave(Duration::from_secs_f32(0.5), 0.5, 0.5, 440);
-    // play_pulse_wave(Duration::from_secs_f32(0.5), 0.25, 0.5, 440);
-    play_pulse_wave(Duration::from_secs_f32(0.3), 1.0, 0.5, 330);
-    play_pulse_wave(Duration::from_secs_f32(0.2), 1.0, 0.5, 246);
-    play_pulse_wave(Duration::from_secs_f32(0.2), 1.0, 0.5, 261);
-    play_pulse_wave(Duration::from_secs_f32(0.3), 1.0, 0.5, 294);
-    play_pulse_wave(Duration::from_secs_f32(0.2), 1.0, 0.5, 261);
-    play_pulse_wave(Duration::from_secs_f32(0.2), 1.0, 0.5, 246);
-    play_pulse_wave(Duration::from_secs_f32(0.3), 1.0, 0.5, 220);
-}
+impl<'a> APU<'a> {
+    pub fn new(handle: &'a OutputStreamHandle) -> APU<'a> {
+        let c1 = Sink::try_new(handle).unwrap();
+        let c2 = Sink::try_new(handle).unwrap();
+        let c3 = Sink::try_new(handle).unwrap();
+        let c4 = Sink::try_new(handle).unwrap();
+        let da = Sink::try_new(handle).unwrap();
+        let db = Sink::try_new(handle).unwrap();
+        let controls = Controls {
+            enable: false,
+            l_vol: 0,
+            r_vol: 0,
+            l_c1_en: false,
+            l_c2_en: false,
+            l_c3_en: false,
+            l_c4_en: false,
+            r_c1_en: false,
+            r_c2_en: false,
+            r_c3_en: false,
+            r_c4_en: false,
+            dmg_vol: 0,
+        };
+        let p1 = PulseChannel1::new();
+        let p2 = PulseChannel2::new();
+        let p3 = WaveChannel::new();
+        APU {
+            cycles: 0,
+            handle,
+            c1,
+            c2,
+            c3,
+            c4,
+            da,
+            db,
+            p1,
+            p2,
+            p3,
+            controls,
+        }
+    }
 
+    // called at 16MHz ish with the cpu step
+    pub fn step(&mut self, ram: &Mem) {
+        // ready at 256 Hz
+        if self.cycles % 256 == 0 {
+            self.c1.append(
+                self.p1
+                    .next(ram)
+                    .take_duration(Duration::from_secs_f64(1.0 / 256.0)),
+            );
+            self.c2.append(
+                self.p2
+                    .next(ram)
+                    .take_duration(Duration::from_secs_f64(1.0 / 256.0)),
+            );
+        }
+
+        // ready dependent on frequency of wave being played
+        if self.p3.ready() {
+            self.c3.append(self.p3.next(ram));
+        } else {
+            self.p3.next(ram);
+        }
+
+        self.cycles = self.cycles.wrapping_add(1);
+    }
+
+    fn master_control(&mut self, dmg_cnt: u16, ds_cnt: u16, stat: u16) {
+        self.controls.l_vol = ((dmg_cnt << 13) >> 13) as u8;
+        self.controls.r_vol = ((dmg_cnt << 9) >> 13) as u8;
+        self.controls.l_c1_en = (dmg_cnt << 7) >> 15 == 1;
+        self.controls.l_c2_en = (dmg_cnt << 6) >> 15 == 1;
+        self.controls.l_c3_en = (dmg_cnt << 5) >> 15 == 1;
+        self.controls.l_c4_en = (dmg_cnt << 4) >> 15 == 1;
+        self.controls.r_c1_en = (dmg_cnt << 3) >> 15 == 1;
+        self.controls.r_c2_en = (dmg_cnt << 2) >> 15 == 1;
+        self.controls.r_c3_en = (dmg_cnt << 1) >> 15 == 1;
+        self.controls.r_c4_en = dmg_cnt >> 15 == 1;
+        self.controls.dmg_vol = ((ds_cnt << 14) >> 14) as u8;
+        self.controls.enable = (stat << 8) >> 15 == 1;
+    }
+
+    pub fn freq_from_rate(rate: u16) -> f32 {
+        (1 << 17) as f32 / (2048 - rate) as f32
+    }
+
+    pub fn rate_from_freq(freq: f32) -> u16 {
+        (2048.0 - (1 << 17) as f32 / freq) as u16
+    }
+}

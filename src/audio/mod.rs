@@ -1,2 +1,3 @@
 pub mod apu;
-pub mod pulse_wave;
+pub mod channels;
+pub mod waves;

@@ -1,18 +1,21 @@
-use std::time::Duration;
+use crate::audio::apu::APU;
 use rodio::Source;
+use std::time::Duration;
 
 pub struct PulseWave {
-    freq: f32,
+    rate: u16,
     duty: f32,
-    num_sample: usize,
+    volume: i8,
+    cycles: u32,
 }
 
 impl PulseWave {
-    pub fn new(freq: f32, duty: f32) -> PulseWave {
+    pub fn new(rate: u16, duty: f32, volume: i8) -> PulseWave {
         PulseWave {
-            freq: freq,
+            rate: rate,
             duty: duty,
-            num_sample: 0,
+            volume: volume,
+            cycles: 0,
         }
     }
 }
@@ -21,9 +24,13 @@ impl Iterator for PulseWave {
     type Item = f32;
 
     fn next(&mut self) -> Option<f32> {
-        self.num_sample = (self.num_sample + 1) % (48000.0 / self.freq) as usize;
-
-        let val = if self.num_sample <= (self.duty * 48000.0 / self.freq) as usize { 1.0 } else { 0.0 };
+        self.cycles += 1;
+        let freq = APU::freq_from_rate(self.rate);
+        let val: f32 = if self.cycles <= (self.duty * 48000.0 / freq) as u32 {
+            (self.volume + 1) as f32 / 16.0
+        } else {
+            0.0
+        };
         Some(val)
     }
 }
