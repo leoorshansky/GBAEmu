@@ -7,6 +7,7 @@
 use std::{u16, u8, usize};
 use gdk_pixbuf::{Pixbuf, Colorspace};
 use image::{RgbImage, Rgb};
+use sdl2::{image::LoadTexture, render::Canvas, surface::Surface, video::Window};
 use std::time::{Duration, Instant};
 use std::fmt;
 
@@ -146,7 +147,7 @@ impl Register{
 }
 
 
-pub fn draw(mem: &mut Mem, cycle: usize) -> Option<Pixbuf> {
+pub fn draw(mem: &mut Mem, cycle: usize, canvas: &mut Canvas<Window>) {
     //initializing video registers
     let mut control = Register {
         value: mem.get_halfword(REG_DISPCNT_ADDR).little_endian(),
@@ -162,7 +163,8 @@ pub fn draw(mem: &mut Mem, cycle: usize) -> Option<Pixbuf> {
     };
     //setting up timing
     let oldvCounter = mem.get_byte(0x4000006);
-    let currentLine = (((cycle % FRAME_CYCLES) as f64 / FRAME_CYCLES as f64) * 228f64 ) as u16;
+    let cycle_within_frame = cycle % FRAME_CYCLES;
+    let currentLine = ((cycle_within_frame as f64 / FRAME_CYCLES as f64) * 228f64 ) as u16;
     vCounter.setValue(currentLine, mem);
     //if currentLine != oldvCounter as u16 { println!("VCOUNTER IS {}", mem.get_byte(0x4000006)) };
     if(vCounter.getValue(mem) == status.getBits(VCountTriggerValue_START_BIT as u16, 8, mem)){
@@ -171,9 +173,7 @@ pub fn draw(mem: &mut Mem, cycle: usize) -> Option<Pixbuf> {
         }
         status.setBit(1, VCountTrigger_BIT, mem);
     }
-    let mut blanking = false;
     if(cycle % SCANLINE_CYCLES > H_BLANK_CYCLES){
-        blanking = true;
         if(status.getBit(HBlankInterruptRequest_BIT as u16, mem) == 1 && status.getBit(HBlank_BIT as u16, mem) == 0){
             mem.request_irq(Interrupt::HBlank);
         }
@@ -182,8 +182,7 @@ pub fn draw(mem: &mut Mem, cycle: usize) -> Option<Pixbuf> {
     else{
         status.setBit(0, HBlank_BIT, mem);
     }
-    if(cycle % FRAME_CYCLES > V_BLANK_CYCLES){
-        blanking = true;
+    if(cycle_within_frame > V_BLANK_CYCLES){
         if(status.getBit(VBlankInterruptRequest_BIT as u16, mem) == 1 && status.getBit(VBlank_BIT as u16, mem) == 0){
             mem.request_irq(Interrupt::VBlank);
         }
@@ -192,8 +191,8 @@ pub fn draw(mem: &mut Mem, cycle: usize) -> Option<Pixbuf> {
     else{
         status.setBit(0, VBlank_BIT, mem);
     }
-    if blanking {
-        return None;
+    if !(V_BLANK_CYCLES - 100..=V_BLANK_CYCLES).contains(&cycle_within_frame) {
+        return;
     }
     
     let mut screen = Pixbuf::new(Colorspace::Rgb, false, 8, 960, 640).unwrap();
@@ -249,7 +248,11 @@ pub fn draw(mem: &mut Mem, cycle: usize) -> Option<Pixbuf> {
     //     }
     // }
     //let v = Pixbuf::from_mut_slice(&mut screen, Colorspace::Rgb, false, 8, 240, 160, 720);
-    return Some(screen);
+    let tex_creator = canvas.texture_creator();
+    let l = unsafe { screen.get_pixels() };
+    let surf = Surface::from_data(l, 960, 640, 960 * 3, sdl2::pixels::PixelFormatEnum::RGB24).unwrap();
+    canvas.copy(&surf.as_texture(&tex_creator).unwrap(), None, None).unwrap();
+    canvas.present();
 }
 
 

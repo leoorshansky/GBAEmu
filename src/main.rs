@@ -29,6 +29,10 @@ fn main() -> Result<()> {
         .build()
         .unwrap();
 
+    let mut canvas = window.into_canvas().build().unwrap();
+    canvas.clear();
+    canvas.present();
+
     let mut cpu = Cpu::new();
     let mut ram = mem::Mem::new(235_000_000);
     println!("Loading memory...");
@@ -47,11 +51,12 @@ fn main() -> Result<()> {
         if cpu.step(&mut ram).is_none() {
             break;
         }
-        if cycles % 5 == 0 {
-            draw(&mut ram, cycles);
+        if cycles % 100 == 0 {
+            draw(&mut ram, cycles, &mut canvas);
         }
         cycles += 2;
     }
+
     println!("Took {} ms", Instant::now().duration_since(gpu_cycle_start).as_millis());
     println!("Ran {} cycles", cycles);
 
