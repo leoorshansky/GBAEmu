@@ -3,6 +3,7 @@ pub mod audio;
 pub mod graphics;
 extern crate gio;
 
+use rodio::OutputStream;
 use gio::prelude::*;
 
 use std::{env, thread::sleep};
@@ -14,7 +15,7 @@ use graphics::gpu::{draw};
 use anyhow::Result;
 use arm::{cpu, mem};
 use arm::cpu::Cpu;
-use audio::apu::make_a_sound;
+use audio::apu::APU;
 
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
@@ -46,6 +47,8 @@ fn main() -> Result<()> {
     //cpu.toggle_debug();
     let two_clock_cycles = Duration::from_nanos(5);
     let gpu_cycle_start = Instant::now();
+    let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+    let mut apu = APU::new(&stream_handle);
     let mut cycles = 0;
     while cycles < 100_000_000 {
         if cpu.step(&mut ram).is_none() {
@@ -54,6 +57,7 @@ fn main() -> Result<()> {
         if cycles % 100 == 0 {
             draw(&mut ram, cycles, &mut canvas);
         }
+        apu.step(&ram);
         cycles += 2;
     }
 
