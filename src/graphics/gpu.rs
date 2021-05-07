@@ -247,15 +247,9 @@ pub fn draw(mem: &mut Mem, cycle: usize, canvas: &mut Canvas<Window>) {
         }
     }
     
-    // if(control.getBits(VideoMode_START_BIT as u16, 2) == 3){
-    //     if(control.getBit(BG2Display_BIT as u16) == 1){
-    //         addBGBitmapLayer(&mut screen, mem);
-    //     }
-    // }
-    //let v = Pixbuf::from_mut_slice(&mut screen, Colorspace::Rgb, false, 8, 240, 160, 720);
     let tex_creator = canvas.texture_creator();
     let l = unsafe { screen.get_pixels() };
-    File::create("pixbuf.hex").unwrap().write_all(l).unwrap();
+    //File::create("pixbuf.hex").unwrap().write_all(l).unwrap();
     let surf = Surface::from_data(l, 960, 640, screen.get_rowstride() as u32, sdl2::pixels::PixelFormatEnum::RGB24).unwrap();
     canvas.copy(&surf.as_texture(&tex_creator).unwrap(), None, None).unwrap();
     canvas.present();
@@ -476,7 +470,7 @@ pub fn drawTiledSprite(spriteNum: usize, screen: &mut Pixbuf, mem: &mut Mem, mut
                         // screen[((960*(4*y+y1)  + (4*x+x1)) * 3) as usize] = (redComp as u8) << 3;
                         // screen[((960*(4*y+y1)  + (4*x+x1)) * 3 + 1) as usize] = (greenComp as u8) << 3;
                         // screen[((960*(4*y+y1)  + (4*x+x1)) * 3 + 2) as usize] = (blueComp as u8) << 3;
-                        y = y % 256;
+                        y %= 256;
                         if(x < 240 && y < 160){
                             screen.put_pixel((4*x + x1) as u32, (4 * y + y1) as u32, (redComp as u8) << 3 , (greenComp as u8) << 3, (blueComp as u8) << 3, 1);                            
                         }                   

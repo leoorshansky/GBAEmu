@@ -76,7 +76,7 @@ impl Cpu {
         self.regs[15] = 0;
     }
 
-    pub fn step(&mut self, ram: &mut Mem) -> Option<()> {
+    pub fn step(&mut self, ram: &mut Mem, cycle: usize) -> Option<()> {
         let state = self.get_state();
         let mode = self.get_mode();
 
@@ -86,6 +86,14 @@ impl Cpu {
 
         let pc = if self.regs[15] >= 8 {self.regs[15] - if let State::Arm = state { 8 } else { 4 }} else { 0 };
 
+        // static mut frame_count: u8 = 0;
+        // if pc == 0x2b34 {
+        //     unsafe {frame_count += 1};
+        //     println!("Draw #{} at cycle {}", unsafe {frame_count}, cycle);
+        //     if unsafe {frame_count == 6} {
+        //         return None;
+        //     }
+        // }
         self.irq_input = ram.get_byte(0x4000202) != 0 && ram.get_byte(0x4000208) & 1 == 1;
 
         if self.fiq_input && !self.get_status_bit(BIT_F) || self.irq_input && !self.get_status_bit(BIT_I) {
